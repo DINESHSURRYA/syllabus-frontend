@@ -57,6 +57,18 @@ export function useCurriculumData(
             });
 
             setSavedSyllabi(formatted);
+
+            // Clean up stale/deleted syllabus from Zustand store and localStorage
+            const currentStoreSyllabus = useSyllabusStore.getState().syllabus;
+            if (formatted.length > 0 && currentStoreSyllabus && (currentStoreSyllabus.id || currentStoreSyllabus.course?.code)) {
+              const storeId = (currentStoreSyllabus.id || currentStoreSyllabus.course?.code || '').trim().toLowerCase();
+              const isStillValid = formatted.some(s => s.id.toLowerCase() === storeId || s.code.toLowerCase() === storeId);
+              if (!isStillValid) {
+                if (typeof window !== 'undefined') {
+                  localStorage.removeItem('active_saved_syllabus');
+                }
+              }
+            }
           }
         }
       } catch (err) {
@@ -89,7 +101,10 @@ export function useCurriculumData(
           targetId = savedSyllabi[0].id;
         }
         if (!targetId && currentStoreSyllabus && currentStoreSyllabus.units && currentStoreSyllabus.units.length > 0) {
-          targetId = currentStoreSyllabus.id || currentStoreSyllabus.course?.code || '';
+          const storeId = currentStoreSyllabus.id || currentStoreSyllabus.course?.code || '';
+          if (savedSyllabi.length === 0 || savedSyllabi.some(s => s.id === storeId || s.code === storeId)) {
+            targetId = storeId;
+          }
         }
 
         if (targetId) {

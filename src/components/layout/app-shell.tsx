@@ -4,11 +4,9 @@ import React, { useState, useEffect, ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { 
-  Bell, 
   BookOpen, 
   Compass, 
   LayoutGrid, 
-  Search, 
   Settings, 
   Sparkles, 
   Upload, 
@@ -328,15 +326,11 @@ const SidebarNav = React.memo(function SidebarNav({
 // Memoized Header Sub-Component
 const HeaderBar = React.memo(function HeaderBar({
   activeModule,
-  activeNotification,
-  isBackgroundProcessing,
   isGuideEnabled,
   toggleGuide,
   setMinimized,
 }: {
   activeModule: ModuleType;
-  activeNotification: any;
-  isBackgroundProcessing: boolean;
   isGuideEnabled: boolean;
   toggleGuide: (enabled?: boolean) => void;
   setMinimized: (v: boolean) => void;
@@ -366,19 +360,10 @@ const HeaderBar = React.memo(function HeaderBar({
           }`}>
             {currentModuleConfig.label}
           </span>
-          <span className="hidden sm:inline">● AI AGENTS RUNNING</span>
         </div>
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="hidden md:flex items-center gap-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] px-3.5 py-2 text-[var(--text-primary)] focus-within:border-[var(--border-focus)]">
-          <Search size={16} className="text-[var(--text-muted)]" />
-          <input
-            className="bg-transparent text-sm outline-none placeholder:text-[var(--text-muted)] text-[var(--text-primary)] w-48 lg:w-64 font-sans"
-            placeholder="Search curriculum topics..."
-          />
-        </div>
-
         <button
           onClick={() => {
             if (!isGuideEnabled) {
@@ -396,30 +381,6 @@ const HeaderBar = React.memo(function HeaderBar({
           <Sparkles size={14} className={isGuideEnabled ? "text-indigo-400 animate-pulse" : ""} />
           <span className="hidden sm:inline font-mono">AI Guide</span>
         </button>
-
-        <div className="relative">
-          <button
-            onClick={() => {
-              if (activeNotification) {
-                // Navigate to verification if active notification exists
-              }
-            }}
-            className={`relative rounded-2xl border bg-[var(--bg-subtle)] p-2.5 transition-all ${
-              activeNotification || isBackgroundProcessing
-                ? 'border-indigo-500/50 text-indigo-400 bg-indigo-500/10'
-                : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-            }`}
-            title={activeNotification ? activeNotification.title : isBackgroundProcessing ? 'Extraction in progress...' : 'Notifications'}
-          >
-            <Bell size={16} className={isBackgroundProcessing ? 'animate-bounce text-indigo-400' : ''} />
-            {(activeNotification || isBackgroundProcessing) && (
-              <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-indigo-500 border-2 border-slate-950" />
-              </span>
-            )}
-          </button>
-        </div>
 
         <Link
           href="/profile"
@@ -546,8 +507,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       >
         <HeaderBar
           activeModule={activeModule}
-          activeNotification={activeNotification}
-          isBackgroundProcessing={isBackgroundProcessing}
           isGuideEnabled={isGuideEnabled}
           toggleGuide={toggleGuide}
           setMinimized={setMinimized}

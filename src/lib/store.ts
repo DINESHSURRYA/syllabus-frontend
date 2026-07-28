@@ -20,6 +20,10 @@ export interface UnitItem {
 
 export interface SyllabusData {
   id?: string;
+  isCodeMismatch?: boolean;
+  userCourseCode?: string;
+  pdfCourseCode?: string;
+  mismatchWarning?: string;
   course: {
     code: string;
     title: string;

@@ -47,6 +47,8 @@ export function AnalyticsCharts({
   const hasData = unitCount > 0;
   const hasBloomData = bloomData.some((d) => d.value > 0);
 
+  const activeDifficultyData = difficultyData.filter((d) => d.value > 0);
+
   if (isLoading) {
     return (
       <div className="grid gap-6 xl:grid-cols-2">
@@ -111,28 +113,50 @@ export function AnalyticsCharts({
               Complexity
             </span>
           </CardHeader>
-          <CardContent className="h-72 p-6 flex items-center justify-center">
+          <CardContent className="h-72 p-6 flex flex-col items-center justify-center">
             {hasData ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={difficultyData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={90}
-                    innerRadius={45}
-                    paddingAngle={4}
-                    label={({ name, percentage }) => `${name} (${percentage || 0}%)`}
-                  >
-                    {difficultyData.map((entry, index) => (
-                      <Cell key={`cell-${entry.name}`} fill={DIFFICULTY_COLORS[index % DIFFICULTY_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<CustomTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
+              <>
+                <ResponsiveContainer width="100%" height="80%">
+                  <PieChart margin={{ top: 10, right: 50, left: 50, bottom: 10 }}>
+                    <Pie
+                      data={activeDifficultyData.length > 0 ? activeDifficultyData : difficultyData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={60}
+                      innerRadius={32}
+                      paddingAngle={activeDifficultyData.length > 1 ? 4 : 0}
+                      label={({ name, percentage, value }) =>
+                        value > 0 ? `${name} (${percentage || 0}%)` : null
+                      }
+                    >
+                      {(activeDifficultyData.length > 0 ? activeDifficultyData : difficultyData).map((entry) => {
+                        const originalIndex = difficultyData.findIndex((d) => d.name === entry.name);
+                        const colorIndex = originalIndex >= 0 ? originalIndex : 0;
+                        return (
+                          <Cell key={`cell-${entry.name}`} fill={DIFFICULTY_COLORS[colorIndex % DIFFICULTY_COLORS.length]} />
+                        );
+                      })}
+                    </Pie>
+                    <Tooltip content={<CustomTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+
+                <div className="flex items-center justify-center gap-4 mt-1 flex-wrap text-xs font-mono">
+                  {difficultyData.map((entry, index) => (
+                    <div key={entry.name} className="flex items-center gap-1.5">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
+                        style={{ backgroundColor: DIFFICULTY_COLORS[index % DIFFICULTY_COLORS.length] }}
+                      />
+                      <span className="text-slate-600 dark:text-slate-300 font-medium">
+                        {entry.name}: <span className="font-bold">{entry.percentage || 0}%</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-center text-xs font-mono text-slate-400">
                 <PieChartIcon className="w-8 h-8 mb-2 opacity-50 text-slate-500" />

@@ -57,6 +57,11 @@ export function normalizeBackendResponse(raw: any): SyllabusData {
 
   const c = raw.course || raw;
 
+  const isCodeMismatch = Boolean(raw.isCodeMismatch || c.isCodeMismatch || raw.is_code_mismatch);
+  const userCourseCode = raw.userCourseCode || c.userCourseCode || raw.user_course_code || '';
+  const pdfCourseCode = raw.pdfCourseCode || c.pdfCourseCode || raw.pdf_course_code || '';
+  const mismatchWarning = raw.mismatchWarning || c.mismatchWarning || raw.mismatch_warning || '';
+
   const code = sanitizeText(c.code || c.courseCode || c.course_code || raw.courseCode || raw.course_code || '');
   const title = sanitizeText(c.title || c.courseName || c.course_name || c.name || raw.courseName || raw.course_name || '');
   const programme = sanitizeText(c.programme || raw.programme || '');
@@ -71,10 +76,14 @@ export function normalizeBackendResponse(raw: any): SyllabusData {
 
   const prerequisites = sanitizeText(c.prerequisites || raw.prerequisites || '');
   
-  const rawObjectives = Array.isArray(c.objectives)
+  const rawObjectives = Array.isArray(c.courseObjectives)
+    ? c.courseObjectives
+    : Array.isArray(c.objectives)
     ? c.objectives
     : Array.isArray(c.course_objectives)
     ? c.course_objectives
+    : Array.isArray(raw.courseObjectives)
+    ? raw.courseObjectives
     : Array.isArray(raw.objectives)
     ? raw.objectives
     : Array.isArray(raw.course_objectives)
@@ -84,17 +93,29 @@ export function normalizeBackendResponse(raw: any): SyllabusData {
     .map((o: any) => sanitizeText(typeof o === 'string' ? o : o?.description || String(o)))
     .filter(Boolean);
 
-  const rawOutcomes = Array.isArray(c.outcomes)
+  const rawOutcomes = Array.isArray(c.courseOutcomes)
+    ? c.courseOutcomes
+    : Array.isArray(c.outcomes)
     ? c.outcomes
     : Array.isArray(c.course_outcomes)
     ? c.course_outcomes
+    : Array.isArray(raw.courseOutcomes)
+    ? raw.courseOutcomes
     : Array.isArray(raw.outcomes)
     ? raw.outcomes
     : Array.isArray(raw.course_outcomes)
     ? raw.course_outcomes
     : [];
   const outcomes = rawOutcomes
-    .map((o: any) => sanitizeText(typeof o === 'string' ? o : o?.description || String(o)))
+    .map((o: any) => {
+      if (typeof o === 'string') return sanitizeText(o);
+      if (o && typeof o === 'object') {
+        const desc = o.description || o.statement || o.title || '';
+        const code = o.code ? `${o.code}: ` : '';
+        return sanitizeText(`${code}${desc}`.trim() || String(o));
+      }
+      return sanitizeText(String(o));
+    })
     .filter(Boolean);
 
   const units = normalizeUnits(raw.units || c.units || []);
@@ -124,6 +145,10 @@ export function normalizeBackendResponse(raw: any): SyllabusData {
 
   return {
     id: raw.id || code || `course_${Date.now()}`,
+    isCodeMismatch,
+    userCourseCode,
+    pdfCourseCode,
+    mismatchWarning,
     course: {
       code,
       title,

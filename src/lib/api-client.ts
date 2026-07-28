@@ -21,87 +21,7 @@ export async function uploadSyllabusFile(file: File) {
   return res.json();
 }
 
-/**
- * Trigger background extraction job
- */
-export async function startExtraction(fileId: string, filename: string) {
-  const res = await fetch(
-    `${API_BASE_URL}/api/syllabus/extract?file_id=${encodeURIComponent(fileId)}&filename=${encodeURIComponent(filename)}`,
-    {
-      method: 'POST',
-    }
-  );
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Extraction initiation failed (${res.status}): ${errText}`);
-  }
-  return res.json();
-}
 
-/**
- * Poll processing status of background job
- */
-export async function getProcessingStatus(jobId: string) {
-  const res = await fetch(`${API_BASE_URL}/api/syllabus/processing-status/${jobId}`);
-  if (!res.ok) throw new Error('Status check failed');
-  return res.json();
-}
-
-/**
- * Direct Stage 2 Syllabus AI Processing Request
- */
-export async function processSyllabus(
-  documentText: string,
-  promptText: string = AI_PROCESSING_PROMPT
-) {
-  const res = await fetch(`${API_BASE_URL}/api/syllabus/process`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      document_text: documentText,
-      prompt: promptText,
-    }),
-  });
-
-  if (!res.ok) {
-    const errDetail = await res.text().catch(() => '');
-    throw new Error(`Unable to connect to Processing Server (${res.status}): ${errDetail}`);
-  }
-
-  return res.json();
-}
-
-export async function getSyllabus(courseId: string) {
-  const res = await fetch(`${API_BASE_URL}/api/syllabus/${courseId}`);
-  if (!res.ok) throw new Error('Failed to fetch syllabus');
-  return res.json();
-}
-
-export async function saveVerifiedSyllabus(courseId: string, courseData: any) {
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/syllabus/${encodeURIComponent(courseId)}/save`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(courseData),
-    });
-    if (res.ok) return await res.json();
-  } catch (e) {
-    console.warn("Direct courseId save failed, trying /api/syllabus/save fallback:", e);
-  }
-
-  const resFallback = await fetch(`${API_BASE_URL}/api/syllabus/save`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(courseData),
-  });
-  if (!resFallback.ok) {
-    const errText = await resFallback.text().catch(() => '');
-    throw new Error(`Failed to save syllabus (${resFallback.status}): ${errText}`);
-  }
-  return resFallback.json();
-}
 
 export async function generateTimeline(params: { courseId?: string; selectedUnitIds: string[]; targetHours: number; customHours?: number }) {
   const res = await fetch(`${API_BASE_URL}/api/timeline/generate`, {
@@ -348,6 +268,86 @@ export async function getCurriculumHierarchy(syllabusId: string, units?: string)
   return res.json();
 }
 
+export async function startExtraction(fileId: string, filename: string, courseCode?: string) {
+  const codeParam = courseCode ? `&course_code=${encodeURIComponent(courseCode)}` : '';
+  const res = await fetch(
+    `${API_BASE_URL}/api/syllabus/extract?file_id=${encodeURIComponent(fileId)}&filename=${encodeURIComponent(filename)}${codeParam}`,
+    {
+      method: 'POST',
+    }
+  );
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Extraction initiation failed (${res.status}): ${errText}`);
+  }
+  return res.json();
+}
+
+/**
+ * Poll processing status of background job
+ */
+export async function getProcessingStatus(jobId: string) {
+  const res = await fetch(`${API_BASE_URL}/api/syllabus/processing-status/${jobId}`);
+  if (!res.ok) throw new Error('Status check failed');
+  return res.json();
+}
+
+/**
+ * Direct Stage 2 Syllabus AI Processing Request
+ */
+export async function processSyllabus(
+  documentText: string,
+  promptText: string = AI_PROCESSING_PROMPT
+) {
+  const res = await fetch(`${API_BASE_URL}/api/syllabus/process`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      document_text: documentText,
+      prompt: promptText,
+    }),
+  });
+
+  if (!res.ok) {
+    const errDetail = await res.text().catch(() => '');
+    throw new Error(`Unable to connect to Processing Server (${res.status}): ${errDetail}`);
+  }
+
+  return res.json();
+}
+
+export async function getSyllabus(courseId: string) {
+  const res = await fetch(`${API_BASE_URL}/api/syllabus/${courseId}`);
+  if (!res.ok) throw new Error('Failed to fetch syllabus');
+  return res.json();
+}
+
+export async function saveVerifiedSyllabus(courseId: string, courseData: any) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/syllabus/${encodeURIComponent(courseId)}/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(courseData),
+    });
+    if (res.ok) return await res.json();
+  } catch (e) {
+    console.warn("Direct courseId save failed, trying /api/syllabus/save fallback:", e);
+  }
+
+  const resFallback = await fetch(`${API_BASE_URL}/api/syllabus/save`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(courseData),
+  });
+  if (!resFallback.ok) {
+    const errText = await resFallback.text().catch(() => '');
+    throw new Error(`Failed to save syllabus to database (${resFallback.status}): ${errText}`);
+  }
+  return resFallback.json();
+}
+
 export async function getSyllabusTimeline(syllabusId: string) {
   const res = await fetch(`${API_BASE_URL}/api/timeline/syllabus/${encodeURIComponent(syllabusId)}`);
   if (!res.ok) throw new Error('Failed to fetch syllabus timeline state');
@@ -374,7 +374,7 @@ export async function uploadAndExtractSyllabusBackend(
   }
 
   // 2. Trigger async background extraction job (/api/syllabus/extract)
-  const extractRes = await startExtraction(fileId, filename);
+  const extractRes = await startExtraction(fileId, filename, courseCode);
   const jobId = extractRes.jobId;
 
   if (!jobId) {
@@ -409,14 +409,23 @@ export async function uploadAndExtractSyllabusBackend(
     throw new Error('Extraction timed out. The backend server took longer than expected.');
   }
 
-  // 4. Ensure course code override if specified
-  if (courseCode) {
-    if (!resultJson.course) resultJson.course = {};
-    if (!resultJson.course.code || resultJson.course.code === 'COURSE') {
-      resultJson.course.code = courseCode.toUpperCase();
-    }
-    if (!resultJson.courseCode) {
-      resultJson.courseCode = courseCode.toUpperCase();
+  // Check course code mismatch
+  const extractedPdfCode = (
+    resultJson.pdfCourseCode ||
+    resultJson.courseCode ||
+    resultJson.course_code ||
+    (resultJson.course && resultJson.course.code) ||
+    ""
+  ).toUpperCase().replace(/\s+/g, "");
+
+  const userCleanCode = (resultJson.userCourseCode || courseCode || "").toUpperCase().replace(/\s+/g, "");
+
+  if (userCleanCode && extractedPdfCode && userCleanCode !== extractedPdfCode) {
+    resultJson.isCodeMismatch = true;
+    resultJson.userCourseCode = userCleanCode;
+    resultJson.pdfCourseCode = extractedPdfCode;
+    if (!resultJson.mismatchWarning) {
+      resultJson.mismatchWarning = `Course Code Mismatch Warning: You entered '${userCleanCode}', but the uploaded document specifies course code '${extractedPdfCode}'. Please verify your document.`;
     }
   }
 
@@ -430,6 +439,28 @@ export async function uploadAndExtractSyllabusBackend(
     jobId,
   };
 }
+
+
+export async function generateCoPoMapping(params: {
+  syllabusId?: string;
+  courseCode?: string;
+  courseName?: string;
+  outcomes?: any[];
+  units?: any[];
+  syllabusData?: any;
+}) {
+  const res = await fetch(`${API_BASE_URL}/api/syllabus/generate-co-po-mapping`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Failed to generate CO-PO mapping (${res.status}): ${errText}`);
+  }
+  return res.json();
+}
+
 
 
 

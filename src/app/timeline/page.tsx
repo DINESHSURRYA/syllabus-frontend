@@ -301,7 +301,10 @@ export default function TimelinePage() {
     setIsLoadingSyllabus(true);
     const loadSyllabus = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/syllabus/${encodeURIComponent(selectedSyllabusId)}`);
+        let res = await fetch(`http://localhost:8000/api/syllabus/${encodeURIComponent(selectedSyllabusId)}`);
+        if (!res.ok) {
+          res = await fetch(`http://localhost:8000/api/courses/${encodeURIComponent(selectedSyllabusId)}`);
+        }
         if (res.ok) {
           const raw = await res.json();
           const normalized = normalizeSyllabusToStoreData(raw);

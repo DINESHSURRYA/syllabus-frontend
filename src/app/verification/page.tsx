@@ -54,7 +54,7 @@ import { AppShell } from '@/components/layout/app-shell';
 import { useSyllabusStore, emptySyllabus, UnitItem, TopicItem } from '@/lib/store';
 import { useGuideStore } from '@/lib/guide-store';
 import { generateTopicTimeline, formatHours, TopicAllocationInput } from '@/lib/services/timeline-service';
-import { uploadAndExtractSyllabusBackend } from '@/lib/api-client';
+import { uploadAndExtractSyllabusBackend, generateCoPoMapping } from '@/lib/api-client';
 import { sanitizeText } from '@/lib/normalizer';
 import { toast } from 'sonner';
 
@@ -108,6 +108,7 @@ export interface LabExperimentData {
 export interface CourseData {
   code: string;
   title: string;
+  university?: string;
   programme: string;
   department: string;
   regulation: string;
@@ -137,8 +138,18 @@ export interface AdditionalInfoData {
   remarks: string;
 }
 
+export interface CoPoMappingData {
+  coStatements: string[];
+  poStatements: string[];
+  matrix: Record<string, Record<string, number>>;
+}
+
 export interface FullSyllabusData {
   id: string;
+  isCodeMismatch?: boolean;
+  userCourseCode?: string;
+  pdfCourseCode?: string;
+  mismatchWarning?: string;
   course: CourseData;
   objectives: string[];
   outcomes: string[];
@@ -148,6 +159,7 @@ export interface FullSyllabusData {
   referenceBooks: string[];
   assessment: AssessmentItemData[];
   additionalInfo: AdditionalInfoData;
+  coPoMapping?: CoPoMappingData;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -200,6 +212,11 @@ function mapBackendToFullSyllabus(backendData: any): FullSyllabusData {
   const content = backendData.content || backendData;
   const courseObj = (typeof content.course === 'object' && content.course) ? content.course : (typeof backendData.course === 'object' && backendData.course) ? backendData.course : {};
 
+  const isCodeMismatch = Boolean(backendData.isCodeMismatch || content.isCodeMismatch || (backendData as any).is_code_mismatch);
+  const userCourseCode = backendData.userCourseCode || content.userCourseCode || (backendData as any).user_course_code || "";
+  const pdfCourseCode = backendData.pdfCourseCode || content.pdfCourseCode || (backendData as any).pdf_course_code || "";
+  const mismatchWarning = backendData.mismatchWarning || content.mismatchWarning || (backendData as any).mismatch_warning || "";
+
   const courseCode = sanitizeText(backendData.courseCode || content.courseCode || courseObj.code || courseObj.courseCode || content.metadata?.courseCode || "COURSE");
   const courseTitle = sanitizeText(backendData.courseName || backendData.courseTitle || content.courseName || content.courseTitle || courseObj.title || courseObj.courseName || content.metadata?.courseName || "Untitled Syllabus");
   const department = sanitizeText(backendData.department || content.department || courseObj.department || content.metadata?.department || "Computer Science & Engineering");
@@ -248,11 +265,43 @@ function mapBackendToFullSyllabus(backendData: any): FullSyllabusData {
     };
   });
 
-  const rawObjectives = content.objectives || courseObj.objectives || backendData.objectives || [];
-  const objectives = rawObjectives.map((o: any) => sanitizeText(typeof o === 'string' ? o : o.description || String(o))).filter(Boolean);
+  const rawObjectives =
+    content.courseObjectives ||
+    content.course_objectives ||
+    content.objectives ||
+    courseObj.courseObjectives ||
+    courseObj.course_objectives ||
+    courseObj.objectives ||
+    backendData.courseObjectives ||
+    backendData.course_objectives ||
+    backendData.objectives ||
+    [];
+  const objectives = (Array.isArray(rawObjectives) ? rawObjectives : [rawObjectives])
+    .map((o: any) => sanitizeText(typeof o === 'string' ? o : o.description || String(o)))
+    .filter(Boolean);
 
-  const rawOutcomes = content.outcomes || courseObj.outcomes || backendData.outcomes || [];
-  const outcomes = rawOutcomes.map((o: any) => sanitizeText(typeof o === 'string' ? o : o.description || String(o))).filter(Boolean);
+  const rawOutcomes =
+    content.courseOutcomes ||
+    content.course_outcomes ||
+    content.outcomes ||
+    courseObj.courseOutcomes ||
+    courseObj.course_outcomes ||
+    courseObj.outcomes ||
+    backendData.courseOutcomes ||
+    backendData.course_outcomes ||
+    backendData.outcomes ||
+    [];
+  const outcomes = (Array.isArray(rawOutcomes) ? rawOutcomes : [rawOutcomes])
+    .map((o: any) => {
+      if (typeof o === 'string') return sanitizeText(o);
+      if (o && typeof o === 'object') {
+        const desc = o.description || o.statement || o.title || '';
+        const code = o.code ? `${o.code}: ` : '';
+        return sanitizeText(`${code}${desc}`.trim() || String(o));
+      }
+      return sanitizeText(String(o));
+    })
+    .filter(Boolean);
 
   const rawTextbooks = content.textbooks || courseObj.textbooks || backendData.textbooks || [];
   const textbooks = rawTextbooks.map((b: any) => sanitizeText(typeof b === 'string' ? b : b.title || String(b))).filter(Boolean);
@@ -292,46 +341,69 @@ function mapBackendToFullSyllabus(backendData: any): FullSyllabusData {
   const totalUnitHoursSum = units.reduce((acc, u) => acc + u.learningHours, 0);
 
   const parsedLecture = courseObj.hours?.lecture ?? content.lectureHours;
+  const parsedTutorial = courseObj.hours?.tutorial ?? content.tutorialHours;
   const parsedPractical = courseObj.hours?.practical ?? content.practicalHours;
-  const parsedTotal = courseObj.hours?.total ?? content.totalHours ?? content.hours;
 
-  let lectureHours = totalUnitHoursSum > 0 ? totalUnitHoursSum : 45;
-  if (parsedLecture !== undefined) {
-    const pL = Number(parsedLecture);
-    if (!isNaN(pL) && pL > 0) {
-      lectureHours = pL <= 10 ? pL * 15 : pL;
-    }
+  let lectureHours = 3;
+  if (parsedLecture !== undefined && !isNaN(Number(parsedLecture)) && Number(parsedLecture) > 0) {
+    lectureHours = Number(parsedLecture);
   }
 
-  let practicalHours = labExperiments.length > 0 ? 30 : 0;
-  if (parsedPractical !== undefined) {
-    const pP = Number(parsedPractical);
-    if (!isNaN(pP) && pP > 0) {
-      practicalHours = pP <= 10 ? pP * 15 : pP;
-    }
+  let tutorialHours = 0;
+  if (parsedTutorial !== undefined && !isNaN(Number(parsedTutorial))) {
+    tutorialHours = Number(parsedTutorial);
   }
 
-  let totalHours = lectureHours + practicalHours;
-  if (parsedTotal !== undefined) {
-    const pT = Number(parsedTotal);
-    if (!isNaN(pT) && pT > 0) {
-      totalHours = pT;
-    }
+  let practicalHours = 0;
+  if (parsedPractical !== undefined && !isNaN(Number(parsedPractical))) {
+    practicalHours = Number(parsedPractical);
   }
+
+  let totalHours = totalUnitHoursSum > 0 ? totalUnitHoursSum : (lectureHours + tutorialHours + practicalHours || 45);
+
+  // Extract CO-PO Mapping
+  const rawCoPo = backendData.coPoMapping || content.coPoMapping || {};
+  const coStatements = rawCoPo.coStatements || (outcomes.length > 0 ? outcomes.map((out: any, i: number) => {
+    const str = typeof out === 'string' ? out : (out?.description ? `${out.code || `CO${i+1}`}: ${out.description}` : String(out));
+    return str.startsWith('CO') ? str : `CO${i + 1}: ${str}`;
+  }) : [
+    "CO1: Understand core principles and foundational concepts.",
+    "CO2: Analyze problems and formulate structured solutions.",
+    "CO3: Apply methodologies to real-world domain scenarios.",
+    "CO4: Evaluate performance metrics and design trade-offs.",
+    "CO5: Synthesize integrated outcomes for advanced applications."
+  ]);
+  const poStatements = rawCoPo.poStatements || [
+    "PO1", "PO2", "PO3", "PO4", "PO5", "PO6", "PO7", "PO8", "PO9", "PO10", "PO11", "PO12", "PSO1", "PSO2", "PSO3"
+  ];
+  const matrix = rawCoPo.matrix || {
+    "CO1": { "PO1": 3, "PO2": 2, "PO3": 1, "PSO1": 2 },
+    "CO2": { "PO1": 3, "PO2": 3, "PO3": 2, "PSO1": 3 },
+    "CO3": { "PO1": 2, "PO2": 3, "PO3": 3, "PSO2": 2 },
+    "CO4": { "PO2": 3, "PO3": 3, "PO4": 2, "PSO2": 3 },
+    "CO5": { "PO3": 3, "PO4": 3, "PO5": 2, "PSO3": 3 }
+  };
+
+  const universityVal = sanitizeText(backendData.university || content.university || courseObj.university || "Anna University");
 
   return {
     id: backendData.id || "course_dynamic",
+    isCodeMismatch,
+    userCourseCode,
+    pdfCourseCode,
+    mismatchWarning,
     course: {
       code: courseCode,
       title: courseTitle,
-      programme: content.programme || courseObj.programme || "B.E.",
+      university: universityVal,
+      programme: content.programme || courseObj.programme || universityVal,
       department: department,
       regulation: regulation,
       semester: semester,
       credits: credits,
       category: "Professional Core (PC)",
       lectureHours: lectureHours,
-      tutorialHours: 0,
+      tutorialHours: tutorialHours,
       practicalHours: practicalHours,
       totalHours: totalHours,
       status: (backendData.verificationStatus || "In Review") as any
@@ -352,6 +424,11 @@ function mapBackendToFullSyllabus(backendData: any): FullSyllabusData {
       softwareRequirements: "",
       labRequirements: "",
       remarks: ""
+    },
+    coPoMapping: {
+      coStatements,
+      poStatements,
+      matrix
     }
   };
 }
@@ -378,13 +455,24 @@ export default function SyllabusVerificationPage() {
   // --------------------------------------------------------------------------
   // REAL-TIME EXTRACTION PIPELINE ORCHESTRATOR (BACKEND ONLY)
   // --------------------------------------------------------------------------
-  useEffect(() => {
-    if (!pendingExtraction || !pendingExtraction.file) return;
+  const isExecutingRef = useRef(false);
 
+  useEffect(() => {
+    if (!pendingExtraction || !pendingExtraction.file) {
+      if (extractionState.isExtracting && !isExecutingRef.current) {
+        setExtractionProgress({ isExtracting: false });
+      }
+      return;
+    }
+
+    if (isExecutingRef.current) return;
+
+    isExecutingRef.current = true;
     let isMounted = true;
 
     const runExtraction = async () => {
       const { file, courseCode } = pendingExtraction;
+      clearPendingExtraction();
 
       try {
         if (isMounted) {
@@ -404,6 +492,7 @@ export default function SyllabusVerificationPage() {
             if (!isMounted) return;
             const pct = Math.min(95, Math.round((stageIndex / totalStages) * 100));
             setExtractionProgress({
+              isExtracting: true,
               step: stageIndex,
               progress: pct,
               statusText: message || 'Processing syllabus on backend...',
@@ -423,20 +512,25 @@ export default function SyllabusVerificationPage() {
           setSyllabus(mapped);
           setHistory([mapped]);
           setExtractionProgress({
+            isExtracting: true,
             step: 5,
             progress: 100,
             statusText: 'Rendering Extracted Content for Review...',
           });
+
+          // Smoothly dismiss the progress bar after 1.2s of 100% completion display
+          setTimeout(() => {
+            if (isMounted) {
+              setExtractionProgress({ isExtracting: false });
+              isExecutingRef.current = false;
+            }
+          }, 1200);
         }
 
         toast.success(`Successfully extracted syllabus document!`);
-        await new Promise((r) => setTimeout(r, 600));
-
-        if (isMounted) {
-          clearPendingExtraction();
-        }
       } catch (err: any) {
         console.warn('Backend syllabus extraction notice:', err);
+        isExecutingRef.current = false;
         if (isMounted) {
           setExtractionProgress({
             isExtracting: false,
@@ -452,7 +546,7 @@ export default function SyllabusVerificationPage() {
     return () => {
       isMounted = false;
     };
-  }, [pendingExtraction, setExtractionProgress, clearPendingExtraction]);
+  }, [pendingExtraction, extractionState.isExtracting, setExtractionProgress, clearPendingExtraction]);
 
   // Fetch from backend API if ?id= is passed in URL, else sync state dynamically with Zustand store
   useEffect(() => {
@@ -480,6 +574,10 @@ export default function SyllabusVerificationPage() {
     ) {
       const mapped: FullSyllabusData = {
         id: storeSyllabus.id || "course_dynamic",
+        isCodeMismatch: storeSyllabus.isCodeMismatch,
+        userCourseCode: storeSyllabus.userCourseCode,
+        pdfCourseCode: storeSyllabus.pdfCourseCode,
+        mismatchWarning: storeSyllabus.mismatchWarning,
         course: {
           code: storeSyllabus.course.code || "",
           title: storeSyllabus.course.title || "",
@@ -1243,6 +1341,66 @@ export default function SyllabusVerificationPage() {
           </div>
         </motion.div>
 
+        {/* ⚠️ Course Code Mismatch Alert Banner */}
+        {(syllabus.isCodeMismatch || !!syllabus.mismatchWarning) && (
+          <motion.div
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 rounded-2xl border border-amber-500/40 bg-amber-500/10 dark:bg-amber-950/40 p-4 sm:p-5 backdrop-blur-xl shadow-lg relative overflow-hidden flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-amber-900 dark:text-amber-200"
+          >
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">
+                <AlertTriangle className="w-6 h-6 animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 font-bold text-sm text-amber-700 dark:text-amber-300">
+                  <span>⚠️ Course Code Mismatch Detected</span>
+                  <span className="px-2 py-0.5 text-[10px] uppercase tracking-wider font-mono font-extrabold rounded-md bg-amber-500/20 border border-amber-500/30 text-amber-800 dark:text-amber-200">
+                    Validation Warning
+                  </span>
+                </div>
+                <p className="text-xs sm:text-sm mt-1 text-amber-800/90 dark:text-amber-200/90 leading-relaxed font-medium">
+                  {syllabus.mismatchWarning ||
+                    `You entered course code '${syllabus.userCourseCode || "entered code"}', but the uploaded document extracted code is '${syllabus.pdfCourseCode || syllabus.course.code}'. Please verify if the correct document was uploaded.`}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+              {(syllabus.pdfCourseCode || syllabus.course.code) && (
+                <button
+                  onClick={() => {
+                    const targetCode = syllabus.pdfCourseCode || syllabus.course.code;
+                    setSyllabus((prev) => ({
+                      ...prev,
+                      course: {
+                        ...prev.course,
+                        code: targetCode,
+                      },
+                    }));
+                    toast.info(`Course code updated to extracted code: ${targetCode}`);
+                  }}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-900 dark:text-amber-100 transition-colors"
+                >
+                  Use Extracted ({syllabus.pdfCourseCode || 'PDF'})
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setSyllabus((prev) => ({
+                    ...prev,
+                    isCodeMismatch: false,
+                    mismatchWarning: undefined,
+                  }));
+                }}
+                className="p-1.5 text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200 rounded-lg hover:bg-amber-500/10 transition-colors"
+                title="Dismiss warning"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+
         {/* Dynamic Real-Time 5-Step Extraction Progress Bar */}
         {extractionState.isExtracting && (
           <motion.div
@@ -1316,6 +1474,27 @@ export default function SyllabusVerificationPage() {
                   </div>
                 );
               })}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Course Code Mismatch Alert Banner */}
+        {((syllabus as any).isCodeMismatch || ((syllabus as any).pdfCourseCode && (syllabus as any).userCourseCode && (syllabus as any).pdfCourseCode !== (syllabus as any).userCourseCode)) && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="mb-6 rounded-2xl border border-red-500/40 bg-red-500/10 p-4 backdrop-blur-md text-red-900 dark:text-red-200 shadow-md"
+          >
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-6 w-6 text-red-500 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h4 className="text-sm font-extrabold text-red-800 dark:text-red-200">
+                  ⚠️ Course Code Mismatch Detected
+                </h4>
+                <p className="text-xs text-red-700 dark:text-red-300 mt-1 leading-relaxed font-medium">
+                  {(syllabus as any).mismatchWarning || `You entered course code '${(syllabus as any).userCourseCode || 'GE3451'}', but the uploaded document specifies course code '${(syllabus as any).pdfCourseCode || syllabus.course.code}'. Please verify if you uploaded the correct syllabus document.`}
+                </p>
+              </div>
             </div>
           </motion.div>
         )}
@@ -1823,26 +2002,33 @@ export default function SyllabusVerificationPage() {
                 </div>
 
                 <div className="space-y-3">
-                  {syllabus.outcomes.map((out, idx) => (
-                    <motion.div
-                      key={idx}
-                      layout
-                      className="group flex items-start gap-2 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 p-3 transition-all hover:border-slate-300 dark:hover:border-slate-700"
-                    >
-                      <span className="flex h-6 px-2 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 font-mono text-xs font-extrabold text-emerald-600 dark:text-emerald-400 mt-1">
-                        CO{idx + 1}
-                      </span>
-                      <textarea
-                        rows={2}
-                        value={out}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          updateSyllabus((prev) => {
-                            const updatedOut = [...prev.outcomes];
-                            updatedOut[idx] = val;
-                            return { ...prev, outcomes: updatedOut };
-                          });
-                        }}
+                  {syllabus.outcomes.map((out: any, idx: number) => {
+                    const outVal = typeof out === 'string' ? out : (out?.description || out?.statement || (out?.code ? `${out.code}: ${out.description || ''}` : String(out)));
+                    const coCode = (typeof out === 'object' && out?.code) ? out.code : `CO${idx + 1}`;
+                    return (
+                      <motion.div
+                        key={idx}
+                        layout
+                        className="group flex items-start gap-2 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 p-3 transition-all hover:border-slate-300 dark:hover:border-slate-700"
+                      >
+                        <span className="flex h-6 px-2 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 font-mono text-xs font-extrabold text-emerald-600 dark:text-emerald-400 mt-1">
+                          {coCode}
+                        </span>
+                        <textarea
+                          rows={2}
+                          value={outVal}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            updateSyllabus((prev) => {
+                              const updatedOut = [...prev.outcomes];
+                              if (typeof updatedOut[idx] === 'object' && updatedOut[idx] !== null) {
+                                updatedOut[idx] = { ...(updatedOut[idx] as any), description: val };
+                              } else {
+                                updatedOut[idx] = val;
+                              }
+                              return { ...prev, outcomes: updatedOut };
+                            });
+                          }}
                         className="flex-1 rounded-xl border border-transparent bg-transparent p-1.5 text-xs text-slate-800 dark:text-slate-200 focus:border-emerald-500 focus:bg-white dark:focus:bg-slate-950 focus:outline-none transition-all resize-none"
                       />
                       <div className="flex flex-col items-center gap-1 opacity-80 group-hover:opacity-100">
@@ -1892,7 +2078,8 @@ export default function SyllabusVerificationPage() {
                         </button>
                       </div>
                     </motion.div>
-                  ))}
+                  );
+                })}
                 </div>
               </motion.div>
             </section>            {/* ================================================================ */}
@@ -3030,6 +3217,201 @@ export default function SyllabusVerificationPage() {
                       className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                     />
                   </div>
+                </div>
+              </motion.div>
+            </section>
+
+            {/* ================================================================== */}
+            {/* SECTION 9: CO-PO MAPPING MATRIX */}
+            {/* ================================================================== */}
+            <section id="sec-copo-mapping" className="scroll-mt-24">
+              <motion.div
+                initial={{ opacity: 0, y: 15 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-6 md:p-8 shadow-sm backdrop-blur-xl relative overflow-hidden"
+              >
+                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500 via-indigo-500 to-cyan-500" />
+                
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-2xl bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                      <SlidersHorizontal size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-black tracking-tight">9. CO-PO Mapping Matrix</h2>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Course Outcome (CO) to Program Outcome (PO/PSO) alignment matrix (3-High, 2-Medium, 1-Low, 0-None).
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          toast.info("Triggering OpenAI CO-PO Mapping analysis...");
+                          const res = await generateCoPoMapping({
+                            courseCode: (syllabus as any).courseCode || (syllabus as any).pdfCourseCode || 'CS101',
+                            courseName: (syllabus as any).courseTitle || (syllabus as any).courseName || 'Course',
+                            outcomes: syllabus.coPoMapping?.coStatements || (syllabus as any).courseOutcomes || syllabus.outcomes || [],
+                            units: syllabus.units,
+                            syllabusData: syllabus
+                          });
+                          if (res && res.matrix) {
+                            updateSyllabus((prev) => ({
+                              ...prev,
+                              coPoMapping: {
+                                coStatements: res.coStatements || prev.coPoMapping?.coStatements || [],
+                                poStatements: res.poStatements || prev.coPoMapping?.poStatements || ["PO1", "PO2", "PO3", "PO4", "PO5", "PO6", "PO7", "PO8", "PO9", "PO10", "PO11", "PO12", "PSO1", "PSO2", "PSO3"],
+                                matrix: res.matrix
+                              }
+                            }));
+                            toast.success("AI CO-PO Mapping generated & saved to PostgreSQL DB successfully!");
+                          }
+                        } catch (err: any) {
+                          console.error("AI CO-PO mapping error:", err);
+                          toast.error(`AI Mapping error: ${err.message || 'Check OPENAI_API_KEY'}`);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-semibold transition-all shadow-sm cursor-pointer border border-purple-400/30"
+                    >
+                      <Sparkles size={14} className="text-amber-300 animate-pulse" /> AI Auto-Map (OpenAI)
+                    </button>
+                    <button
+                      onClick={() => {
+                        updateSyllabus((prev) => {
+                          const currentCos = prev.coPoMapping?.coStatements || [];
+                          const nextNum = currentCos.length + 1;
+                          const newCo = `CO${nextNum}: New Course Outcome Statement`;
+                          const newCos = [...currentCos, newCo];
+                          const matrix = { ...(prev.coPoMapping?.matrix || {}) };
+                          matrix[`CO${nextNum}`] = { PO1: 3, PO2: 2, PSO1: 2 };
+                          return {
+                            ...prev,
+                            coPoMapping: {
+                              coStatements: newCos,
+                              poStatements: prev.coPoMapping?.poStatements || ["PO1", "PO2", "PO3", "PO4", "PO5", "PO6", "PO7", "PO8", "PO9", "PO10", "PO11", "PO12", "PSO1", "PSO2", "PSO3"],
+                              matrix
+                            }
+                          };
+                        });
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-300 text-xs font-semibold transition-all border border-purple-500/20 cursor-pointer"
+                    >
+                      <Plus size={14} /> Add CO Statement
+                    </button>
+                  </div>
+                </div>
+
+                {/* CO Statements Editor */}
+                <div className="space-y-3 mb-6">
+                  <h4 className="text-xs font-mono font-bold text-slate-500 uppercase tracking-wider">Course Outcome Statements</h4>
+                  {(syllabus.coPoMapping?.coStatements || [
+                    "CO1: Understand core principles and foundational concepts.",
+                    "CO2: Analyze problems and formulate structured solutions.",
+                    "CO3: Apply methodologies to real-world domain scenarios.",
+                    "CO4: Evaluate performance metrics and design trade-offs.",
+                    "CO5: Synthesize integrated outcomes for advanced applications."
+                  ]).map((stmt: any, idx: number) => {
+                    const stmtStr = typeof stmt === 'string' ? stmt : (stmt?.description ? `${stmt.code || `CO${idx+1}`}: ${stmt.description}` : String(stmt));
+                    const coCode = (typeof stmt === 'object' && stmt?.code) ? stmt.code : (stmtStr.split(':')[0] || `CO${idx + 1}`);
+                    return (
+                      <div key={idx} className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-bold text-purple-600 dark:text-purple-400 w-12">
+                          {coCode}
+                        </span>
+                        <input
+                          type="text"
+                          value={stmtStr}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            updateSyllabus((prev) => {
+                              const currentCos = [...(prev.coPoMapping?.coStatements || [])];
+                              currentCos[idx] = val;
+                              return {
+                                ...prev,
+                                coPoMapping: {
+                                  ...(prev.coPoMapping || { poStatements: [], matrix: {} }),
+                                  coStatements: currentCos
+                                }
+                              };
+                            });
+                          }}
+                          className="flex-1 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-3 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* CO-PO Correlation Matrix Grid */}
+                <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-mono">
+                        <th className="p-2.5 font-bold border-r border-slate-200 dark:border-slate-800 whitespace-nowrap">CO / PO</th>
+                        {(syllabus.coPoMapping?.poStatements || ["PO1", "PO2", "PO3", "PO4", "PO5", "PO6", "PO7", "PO8", "PO9", "PO10", "PO11", "PO12", "PSO1", "PSO2", "PSO3"]).map((po) => (
+                          <th key={po} className="p-2.5 font-bold text-center border-r border-slate-200/50 dark:border-slate-800/50 min-w-[40px]">
+                            {po}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-900 text-slate-700 dark:text-slate-300">
+                      {(syllabus.coPoMapping?.coStatements || ["CO1", "CO2", "CO3", "CO4", "CO5"]).map((stmt: any, cIdx: number) => {
+                        const stmtStr = typeof stmt === 'string' ? stmt : (stmt?.code || `CO${cIdx + 1}`);
+                        const coKey = (typeof stmt === 'object' && stmt?.code) ? stmt.code : (stmtStr.split(':')[0].trim() || `CO${cIdx + 1}`);
+                        const pos = syllabus.coPoMapping?.poStatements || ["PO1", "PO2", "PO3", "PO4", "PO5", "PO6", "PO7", "PO8", "PO9", "PO10", "PO11", "PO12", "PSO1", "PSO2", "PSO3"];
+                        
+                        return (
+                          <tr key={coKey} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/50 transition-colors">
+                            <td className="p-2.5 font-mono font-bold text-purple-600 dark:text-purple-400 border-r border-slate-200 dark:border-slate-800 whitespace-nowrap">
+                              {coKey}
+                            </td>
+                            {pos.map((poKey) => {
+                              const val = syllabus.coPoMapping?.matrix?.[coKey]?.[poKey] ?? 0;
+                              return (
+                                <td key={poKey} className="p-1.5 text-center border-r border-slate-100 dark:border-slate-900">
+                                  <select
+                                    value={val}
+                                    onChange={(e) => {
+                                      const numVal = Number(e.target.value);
+                                      updateSyllabus((prev) => {
+                                        const prevMap = prev.coPoMapping || { coStatements: [], poStatements: [], matrix: {} };
+                                        const matrix = { ...prevMap.matrix };
+                                        matrix[coKey] = { ...(matrix[coKey] || {}), [poKey]: numVal };
+                                        return {
+                                          ...prev,
+                                          coPoMapping: {
+                                            ...prevMap,
+                                            matrix
+                                          }
+                                        };
+                                      });
+                                    }}
+                                    className={`w-10 text-center rounded-lg py-1 text-xs font-mono font-bold border focus:outline-none ${
+                                      val === 3
+                                        ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/40'
+                                        : val === 2
+                                        ? 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border-cyan-500/40'
+                                        : val === 1
+                                        ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/40'
+                                        : 'bg-slate-100 dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-slate-800'
+                                    }`}
+                                  >
+                                    <option value={0}>-</option>
+                                    <option value={1}>1</option>
+                                    <option value={2}>2</option>
+                                    <option value={3}>3</option>
+                                  </select>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </motion.div>
             </section>

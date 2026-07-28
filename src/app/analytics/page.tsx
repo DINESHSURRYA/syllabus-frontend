@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, BookOpen, Clock, ChevronDown, Check, Upload, BarChart3, Layers, Brain, RefreshCw } from 'lucide-react';
+import { Sparkles, BookOpen, Clock, ChevronDown, Check, Upload, BarChart3, Layers, Brain, RefreshCw, Search } from 'lucide-react';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/app-shell';
 import { AnalyticsCard } from '@/components/analytics-card';
@@ -26,6 +26,7 @@ export default function AnalyticsPage() {
   const { syllabus: storeSyllabus } = useSyllabusStore();
   const [selectedSyllabusId, setSelectedSyllabusId] = useState<string>('');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Fetch active curriculum data & list of saved syllabi from backend/PostgreSQL
   const { savedSyllabi, hierarchy, isLoading, course } = useCurriculumData(
@@ -35,33 +36,40 @@ export default function AnalyticsPage() {
     selectedSyllabusId
   );
 
-  // Combine saved syllabi list with in-memory store syllabus if not present
+  // Use saved syllabi list from backend repository
   const allSyllabiOptions = useMemo(() => {
     const list = [...savedSyllabi];
-    if (storeSyllabus && storeSyllabus.units && storeSyllabus.units.length > 0) {
+    if (savedSyllabi.length === 0 && storeSyllabus && storeSyllabus.units && storeSyllabus.units.length > 0) {
       const storeId = storeSyllabus.id || storeSyllabus.course?.code || 'store_active';
       const storeCode = storeSyllabus.course?.code || 'ACTIVE';
       const storeTitle = storeSyllabus.course?.title || 'Current Uploaded Syllabus';
 
-      const alreadyExists = list.some(
-        (s) => s.id === storeId || s.code.toLowerCase() === storeCode.toLowerCase()
-      );
-      if (!alreadyExists) {
-        list.unshift({
-          id: storeId,
-          code: storeCode,
-          title: storeTitle,
-          updatedAt: new Date().toISOString(),
-        });
-      }
+      list.unshift({
+        id: storeId,
+        code: storeCode,
+        title: storeTitle,
+        updatedAt: new Date().toISOString(),
+      });
     }
     return list;
   }, [savedSyllabi, storeSyllabus]);
 
-  // Set default selected syllabus ID on initial load
+  // Filter saved syllabi based on user search term
+  const filteredSyllabiOptions = useMemo(() => {
+    if (!searchTerm.trim()) return allSyllabiOptions;
+    const term = searchTerm.toLowerCase().trim();
+    return allSyllabiOptions.filter(
+      (s) => s.code.toLowerCase().includes(term) || s.title.toLowerCase().includes(term)
+    );
+  }, [allSyllabiOptions, searchTerm]);
+
+  // Set default selected syllabus ID on initial load and sync if current selection is invalid (e.g. deleted)
   useEffect(() => {
-    if (!selectedSyllabusId && allSyllabiOptions.length > 0) {
-      setSelectedSyllabusId(allSyllabiOptions[0].id);
+    if (allSyllabiOptions.length > 0) {
+      const isValid = allSyllabiOptions.some((s) => s.id === selectedSyllabusId);
+      if (!selectedSyllabusId || !isValid) {
+        setSelectedSyllabusId(allSyllabiOptions[0].id);
+      }
     }
   }, [allSyllabiOptions, selectedSyllabusId]);
 
@@ -262,7 +270,9 @@ export default function AnalyticsPage() {
         <motion.section
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-[32px] border border-slate-200/90 dark:border-cyan-500/25 bg-white dark:bg-black/70 p-6 md:p-8 backdrop-blur-2xl shadow-lg dark:shadow-[0_0_40px_rgba(6,182,212,0.1)] relative overflow-visible"
+          className={`rounded-[32px] border border-slate-200/90 dark:border-cyan-500/25 bg-white dark:bg-black/70 p-6 md:p-8 backdrop-blur-2xl shadow-lg dark:shadow-[0_0_40px_rgba(6,182,212,0.1)] relative overflow-visible transition-all ${
+            isDropdownOpen ? 'z-40' : 'z-20'
+          }`}
         >
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 overflow-visible">
             <div>
@@ -278,7 +288,7 @@ export default function AnalyticsPage() {
             </div>
 
             {/* Saved Syllabus Selector Dropdown */}
-            <div className="relative min-w-[260px] w-full md:w-auto overflow-visible">
+            <div className="relative min-w-[260px] w-full md:w-auto overflow-visible z-30">
               <label className="block text-[11px] font-mono font-bold text-slate-700 dark:text-slate-400 uppercase tracking-wider mb-1.5">
                 Active Saved Syllabus
               </label>
@@ -308,40 +318,58 @@ export default function AnalyticsPage() {
                       initial={{ opacity: 0, y: -8 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -8 }}
-                      className="absolute right-0 left-0 md:left-auto md:w-80 top-full mt-2 z-50 max-h-64 overflow-y-auto bg-slate-900 border border-cyan-500/40 rounded-2xl shadow-2xl p-1.5 space-y-1 text-xs font-mono backdrop-blur-2xl text-white custom-scrollbar"
+                      className="absolute right-0 left-0 md:left-auto md:w-80 top-full mt-2 z-50 max-h-72 flex flex-col bg-slate-900 border border-cyan-500/40 rounded-2xl shadow-2xl p-1.5 text-xs font-mono backdrop-blur-2xl text-white custom-scrollbar overflow-hidden"
                     >
-                      <div className="px-3 py-1.5 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-800">
-                        Saved Syllabi ({allSyllabiOptions.length})
-                      </div>
-                      {allSyllabiOptions.length === 0 ? (
-                        <div className="px-3 py-3 text-center text-slate-400 italic">
-                          No saved syllabus available
+                      <div className="p-2 border-b border-slate-800 shrink-0 bg-slate-900">
+                        <div className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 px-1">
+                          Saved Syllabi ({filteredSyllabiOptions.length})
                         </div>
-                      ) : (
-                        allSyllabiOptions.map((s) => {
-                          const isSelected = selectedSyllabusId === s.id;
-                          return (
-                            <div
-                              key={s.id}
-                              onClick={() => {
-                                setSelectedSyllabusId(s.id);
-                                setIsDropdownOpen(false);
-                              }}
-                              className={`px-3 py-2 rounded-xl cursor-pointer transition-colors flex items-center justify-between gap-2 ${
-                                isSelected
-                                  ? 'bg-cyan-600 text-white font-bold'
-                                  : 'hover:bg-slate-800 text-slate-200'
-                              }`}
-                            >
-                              <div className="flex flex-col min-w-0 text-left">
-                                <span className="font-bold truncate text-white">{s.code}</span>
-                                <span className="text-slate-300 text-[11px] truncate">{s.title}</span>
+                        <div className="relative">
+                          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="text"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder="Search syllabus code or title..."
+                            className="w-full bg-slate-800/90 text-slate-100 text-xs font-mono rounded-xl pl-8 pr-3 py-1.5 border border-slate-700/80 outline-none focus:border-cyan-400 transition-all placeholder:text-slate-500"
+                            onClick={(e) => e.stopPropagation()}
+                            autoFocus
+                          />
+                        </div>
+                      </div>
+
+                      <div className="overflow-y-auto max-h-52 space-y-1 p-1 custom-scrollbar">
+                        {filteredSyllabiOptions.length === 0 ? (
+                          <div className="px-3 py-3 text-center text-slate-400 italic">
+                            No matching syllabus found
+                          </div>
+                        ) : (
+                          filteredSyllabiOptions.map((s) => {
+                            const isSelected = selectedSyllabusId === s.id;
+                            return (
+                              <div
+                                key={s.id}
+                                onClick={() => {
+                                  setSelectedSyllabusId(s.id);
+                                  setIsDropdownOpen(false);
+                                  setSearchTerm('');
+                                }}
+                                className={`px-3 py-2 rounded-xl cursor-pointer transition-colors flex items-center justify-between gap-2 ${
+                                  isSelected
+                                    ? 'bg-cyan-600 text-white font-bold'
+                                    : 'hover:bg-slate-800 text-slate-200'
+                                }`}
+                              >
+                                <div className="flex flex-col min-w-0 text-left">
+                                  <span className="font-bold truncate text-white">{s.code}</span>
+                                  <span className="text-slate-300 text-[11px] truncate">{s.title}</span>
+                                </div>
+                                {isSelected && <Check size={14} className="text-white shrink-0" />}
                               </div>
-                              {isSelected && <Check size={14} className="text-white shrink-0" />}
-                            </div>
-                          );
-                        })
-                      )}
+                            );
+                          })
+                        )}
+                      </div>
                     </motion.div>
                   </>
                 )}

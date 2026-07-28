@@ -31,7 +31,8 @@ import {
   ListChecks,
   Sparkles,
   Info,
-  ShieldCheck
+  ShieldCheck,
+  Grid3X3
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
@@ -46,6 +47,8 @@ import {
   getSyllabusDownloadUrl
 } from '@/lib/api-client';
 import { VersionCompareModal } from '@/components/syllabus/version-compare-modal';
+import { CoPoMappingModal } from '@/components/syllabus/copo-mapping-modal';
+import { useSyllabusStore, emptySyllabus } from '@/lib/store';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -58,6 +61,7 @@ export default function SyllabusDetailPage() {
   const [syllabusData, setSyllabusData] = useState<any>(null);
   const [versions, setVersions] = useState<any[]>([]);
   const [isCompareOpen, setIsCompareOpen] = useState(false);
+  const [isCoPoOpen, setIsCoPoOpen] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [expandedUnit, setExpandedUnit] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -119,6 +123,15 @@ export default function SyllabusDetailPage() {
     try {
       await deleteSyllabusRepository(syllabusId);
       showToast("Syllabus deleted.", "success");
+
+      const activeStoreSyllabus = useSyllabusStore.getState().syllabus;
+      if (activeStoreSyllabus && (activeStoreSyllabus.id === syllabusId || activeStoreSyllabus.course?.code?.toLowerCase() === syllabusId.toLowerCase())) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('active_saved_syllabus');
+        }
+        useSyllabusStore.setState({ syllabus: emptySyllabus });
+      }
+
       router.push('/syllabus');
     } catch (err) {
       showToast("Failed to delete syllabus.", "error");
@@ -308,6 +321,14 @@ export default function SyllabusDetailPage() {
                 className="border-purple-300 dark:border-purple-500/40 bg-purple-100 dark:bg-purple-500/10 text-purple-950 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-500/20 text-xs font-bold"
               >
                 <GitBranch size={15} className="mr-1.5" /> Curriculum Tree
+              </Button>
+
+              <Button
+                onClick={() => setIsCoPoOpen(true)}
+                variant="outline"
+                className="border-indigo-300 dark:border-indigo-500/40 bg-indigo-100 dark:bg-indigo-500/10 text-indigo-950 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-500/20 text-xs font-bold"
+              >
+                <Grid3X3 size={15} className="mr-1.5 text-indigo-600 dark:text-indigo-400" /> CO-PO Mapping
               </Button>
 
               {/* Download Dropdown / Exports */}
@@ -544,14 +565,26 @@ export default function SyllabusDetailPage() {
               </CardHeader>
               <CardContent className="p-6 space-y-2.5">
                 {outcomes.length > 0 ? (
-                  outcomes.map((oc: string, idx: number) => (
-                    <div key={idx} className="flex items-start gap-2.5 text-xs text-slate-700 dark:text-slate-300">
-                      <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-mono text-[10px] font-bold shrink-0">
-                        CO{idx + 1}
-                      </span>
-                      <span className="mt-0.5">{oc}</span>
-                    </div>
-                  ))
+                  outcomes.map((oc: any, idx: number) => {
+                    const isObj = typeof oc === 'object' && oc !== null;
+                    const desc = isObj ? (oc.description || oc.statement || oc.title || String(oc)) : String(oc);
+                    const coCode = isObj && oc.code ? oc.code : `CO${idx + 1}`;
+                    const bloom = isObj && oc.bloomLevel ? oc.bloomLevel : null;
+
+                    return (
+                      <div key={idx} className="flex items-start gap-2.5 text-xs text-slate-700 dark:text-slate-300">
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-mono text-[10px] font-bold shrink-0">
+                          {coCode}
+                        </span>
+                        <span className="mt-0.5 flex-1">{desc}</span>
+                        {bloom && (
+                          <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-700 dark:text-purple-300 font-mono text-[10px] font-bold shrink-0">
+                            {bloom}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })
                 ) : (
                   <p className="text-xs text-slate-500 font-mono">No explicitly extracted course outcomes.</p>
                 )}
@@ -642,6 +675,14 @@ export default function SyllabusDetailPage() {
             </div>
           )}
         </AnimatePresence>
+
+        {/* CO-PO Mapping Matrix Modal */}
+        <CoPoMappingModal
+          isOpen={isCoPoOpen}
+          onClose={() => setIsCoPoOpen(false)}
+          syllabusData={syllabusData}
+          onSaved={loadSyllabus}
+        />
       </div>
     </AppShell>
   );

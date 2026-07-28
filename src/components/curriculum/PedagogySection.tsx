@@ -107,32 +107,32 @@ export const PedagogySection: React.FC<PedagogySectionProps> = ({ topicTitle = "
             <div 
               key={ped.id}
               onClick={() => setSelectedCategory(ped)}
-              className="cursor-pointer group border border-[var(--border-subtle)] hover:border-cyan-500/60 dark:hover:border-cyan-400/60 rounded-3xl p-6 transition-all duration-300 transform hover:-translate-y-1 bg-[var(--bg-card)] hover:bg-[var(--bg-hover)] shadow-md hover:shadow-2xl flex flex-col justify-between"
+              className="cursor-pointer group border border-[var(--border-subtle)] hover:border-indigo-500/60 rounded-3xl p-6 transition-all duration-300 transform hover:-translate-y-1 bg-[var(--bg-card)] hover:bg-[var(--bg-hover)] shadow-md hover:shadow-2xl flex flex-col justify-between"
             >
               <div className="space-y-3">
                 <div className="flex justify-between items-center gap-3">
-                  <span className="text-[11px] font-mono font-black bg-indigo-600 text-white px-3 py-1 rounded-full shadow-xs">
+                  <span className="text-[11px] font-mono font-extrabold bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-3 py-1 rounded-full shadow-xs">
                     #{ped.number} Category
                   </span>
-                  <span className="text-[11px] font-mono font-extrabold text-emerald-900 dark:text-emerald-300 eyecomfort:text-amber-300 bg-emerald-100 dark:bg-emerald-500/20 eyecomfort:bg-amber-500/20 px-3 py-1 rounded-full border border-emerald-300 dark:border-emerald-500/40 eyecomfort:border-amber-500/40">
+                  <span className="text-[11px] font-mono font-extrabold text-emerald-700 dark:text-emerald-300 bg-emerald-500/15 px-3 py-1 rounded-full border border-emerald-500/30">
                     {ped.strategies.length} Strategies
                   </span>
                 </div>
                 
-                <h4 className="text-lg font-black text-[var(--text-primary)] group-hover:text-cyan-700 dark:group-hover:text-cyan-400 eyecomfort:group-hover:text-amber-400 transition-colors tracking-tight leading-snug">
+                <h4 className="text-lg font-black font-sans text-[var(--text-primary)] group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors tracking-tight leading-snug">
                   {ped.category}
                 </h4>
                 
-                <p className="text-xs sm:text-sm text-[var(--text-secondary)] line-clamp-3 leading-relaxed font-medium">
+                <p className="text-xs sm:text-sm text-[var(--text-secondary)] font-sans line-clamp-3 leading-relaxed font-medium">
                   {ped.description}
                 </p>
               </div>
 
               <div className="pt-4 mt-6 border-t border-[var(--border-subtle)] flex items-center justify-between gap-2">
-                <div className="text-[11px] text-[var(--text-muted)] truncate pr-2">
+                <div className="text-[11px] font-sans text-[var(--text-muted)] truncate pr-2">
                   Style: <strong className="text-[var(--text-primary)] font-bold">{ped.teachingStyle}</strong>
                 </div>
-                <div className="flex items-center text-cyan-700 dark:text-cyan-400 eyecomfort:text-amber-400 font-extrabold font-mono text-[11px] shrink-0 group-hover:translate-x-1 transition-transform">
+                <div className="flex items-center text-indigo-600 dark:text-indigo-400 font-extrabold font-mono text-[11px] shrink-0 group-hover:translate-x-1 transition-transform">
                   View Methods <ChevronRight className="w-3.5 h-3.5 ml-1" />
                 </div>
               </div>

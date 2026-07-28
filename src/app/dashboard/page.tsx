@@ -79,6 +79,7 @@ export default function DashboardPage() {
             title="Total Syllabi Count"
             value={isLoadingCount ? "..." : String(totalSyllabiCount)}
             delta={isLoadingCount ? "Fetching database count..." : "Total count of uploaded & extracted syllabi from repository"}
+            href="/syllabus"
           />
 
           {/* Prominent 30 Pedagogies Catalog Card */}

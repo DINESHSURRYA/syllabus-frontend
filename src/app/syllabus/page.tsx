@@ -38,7 +38,8 @@ import {
   ShieldCheck,
   RotateCcw,
   CheckSquare,
-  Square
+  Square,
+  Grid3X3
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
@@ -56,7 +57,9 @@ import {
   getOriginalFileUrl
 } from '@/lib/api-client';
 import { VerificationSuccessModal } from '@/components/syllabus/verification-success-modal';
+import { CoPoMappingModal } from '@/components/syllabus/copo-mapping-modal';
 import { useGuideStore } from '@/lib/guide-store';
+import { useSyllabusStore, emptySyllabus } from '@/lib/store';
 
 
 function SyllabusRepositoryContent() {
@@ -81,6 +84,16 @@ function SyllabusRepositoryContent() {
   // Verification Success Modal State
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [verifiedInfo, setVerifiedInfo] = useState<any>({});
+
+  // CO-PO Mapping Modal State
+  const [showCoPoModal, setShowCoPoModal] = useState<boolean>(false);
+  const [selectedCoPoSyllabus, setSelectedCoPoSyllabus] = useState<any | null>(null);
+
+  const handleOpenCoPoMapping = (s: any, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedCoPoSyllabus(s);
+    setShowCoPoModal(true);
+  };
 
   // Check URL query parameters for redirect from Verification page
   useEffect(() => {
@@ -225,6 +238,15 @@ function SyllabusRepositoryContent() {
       await deleteSyllabusRepository(id, true);
       showToast("Course moved to Recycle Bin.", "success");
       setDeleteConfirmId(null);
+
+      const activeStoreSyllabus = useSyllabusStore.getState().syllabus;
+      if (activeStoreSyllabus && (activeStoreSyllabus.id === id || activeStoreSyllabus.course?.code?.toLowerCase() === id.toLowerCase())) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('active_saved_syllabus');
+        }
+        useSyllabusStore.setState({ syllabus: emptySyllabus });
+      }
+
       fetchRepository();
       fetchRecycleBin();
     } catch (err) {
@@ -755,64 +777,24 @@ function SyllabusRepositoryContent() {
                   <span className="text-[10px] text-slate-400 dark:text-slate-500">Modified: {s.lastModified ? new Date(s.lastModified).toLocaleDateString() : 'Recent'}</span>
                 </div>
 
-                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                  {/* View Original File Button */}
-                  <a
-                    href={getOriginalFileUrl(s.id)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-1.5 rounded-lg text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 border border-cyan-500/30 flex items-center gap-1 font-mono text-[11px] font-bold"
-                    title="View / Download Original Uploaded Document"
-                  >
-                    <FileText size={15} />
-                    <span>Doc</span>
-                  </a>
-                  {/* Quick Verify Button */}
+                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  {/* CO-PO Mapping Button */}
                   <button
-                    onClick={(e) => handleVerifyCard(s, e)}
-                    className="p-1.5 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-emerald-500/20"
-                    title="Verify Syllabus & Launch Celebration"
+                    onClick={(e) => handleOpenCoPoMapping(s, e)}
+                    className="px-2.5 py-1.5 rounded-lg text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-indigo-500/30 flex items-center gap-1.5 font-mono text-[11px] font-bold transition-colors"
+                    title="View CO-PO Mapping Matrix (GAPC v4.0)"
                   >
-                    <CheckCircle2 size={16} />
+                    <Grid3X3 size={15} />
+                    <span>CO-PO</span>
                   </button>
+                  {/* View Details Button */}
                   <button
                     onClick={() => router.push(`/syllabus/${s.id}`)}
-                    className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-cyan-600 dark:hover:text-cyan-300"
+                    className="px-2.5 py-1.5 rounded-lg text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 border border-cyan-500/30 flex items-center gap-1.5 font-mono text-[11px] font-bold transition-colors"
                     title="View Details"
                   >
-                    <Eye size={16} />
-                  </button>
-                  <button
-                    onClick={() => router.push(`/verification?id=${s.id}`)}
-                    className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-blue-600 dark:hover:text-blue-300"
-                    title="Edit Syllabus"
-                  >
-                    <Edit3 size={16} />
-                  </button>
-                  <button
-                    onClick={() => router.push(`/curriculum?id=${s.id}`)}
-                    className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-purple-600 dark:hover:text-purple-300"
-                    title="Generate Curriculum Tree"
-                  >
-                    <GitBranch size={16} />
-                  </button>
-                  <a
-                    href={getSyllabusDownloadUrl(s.id, 'json')}
-                    download
-                    className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-cyan-600 dark:hover:text-cyan-300"
-                    title="Download JSON"
-                  >
-                    <Download size={16} />
-                  </a>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeleteConfirmId(s.id);
-                    }}
-                    className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-red-500"
-                    title="Move to Recycle Bin"
-                  >
-                    <Trash2 size={16} />
+                    <Eye size={15} />
+                    <span>View Details</span>
                   </button>
                 </div>
               </div>
@@ -880,6 +862,14 @@ function SyllabusRepositoryContent() {
                   </td>
                   <td className="p-4 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={(e) => handleOpenCoPoMapping(s, e)}
+                        className="p-1.5 rounded-lg text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-indigo-500/30 flex items-center gap-1 font-mono text-[11px] font-bold"
+                        title="View CO-PO Mapping Matrix (GAPC v4.0)"
+                      >
+                        <Grid3X3 size={15} />
+                        <span>CO-PO</span>
+                      </button>
                       <a
                         href={getOriginalFileUrl(s.id)}
                         target="_blank"
@@ -1263,6 +1253,14 @@ function SyllabusRepositoryContent() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* CO-PO Mapping Matrix Modal */}
+      <CoPoMappingModal
+        isOpen={showCoPoModal}
+        onClose={() => setShowCoPoModal(false)}
+        syllabusData={selectedCoPoSyllabus}
+        onSaved={fetchRepository}
+      />
 
     </div>
   );

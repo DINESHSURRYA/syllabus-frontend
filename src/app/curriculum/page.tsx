@@ -1071,32 +1071,40 @@ export default function CurriculumPage() {
         {/* ==================================================================== */}
         <AnimatePresence>
           {popoverState.isOpen && (
-            <div className="fixed inset-0 z-50 flex justify-end bg-black/75 backdrop-blur-md pointer-events-auto">
+            <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/70 backdrop-blur-md pointer-events-auto">
               <motion.div
                 initial={{ x: '100%' }}
                 animate={{ x: 0 }}
                 exit={{ x: '100%' }}
-                transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-                className="w-full max-w-md md:max-w-lg h-full bg-[var(--bg-card)] border-l border-indigo-500/40 p-6 shadow-2xl overflow-y-auto flex flex-col justify-between backdrop-blur-2xl text-[var(--text-primary)] custom-scrollbar"
+                transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+                className="relative w-full max-w-md md:max-w-lg h-full bg-[var(--bg-card)] border-l border-indigo-500/30 p-6 sm:p-7 shadow-2xl overflow-y-auto flex flex-col justify-between backdrop-blur-2xl text-[var(--text-primary)] custom-scrollbar"
               >
-                <div className="space-y-5">
+                {/* Decorative Ambient Background Glows */}
+                <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none -z-10" />
+                <div className="absolute bottom-1/3 left-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none -z-10" />
+
+                <div className="space-y-6">
                   {/* Popover Header */}
-                  <div className="flex items-start justify-between border-b border-[var(--border-subtle)] pb-4">
-                    <div>
-                      <span className="px-3 py-1 rounded-full text-xs font-mono font-black bg-indigo-600 text-white shadow-xs">
-                        {popoverState.unitName || 'Curriculum Topic'}
-                      </span>
-                      <h2 className="text-lg sm:text-xl font-black text-[var(--text-primary)] mt-2 tracking-tight">
+                  <div className="flex items-start justify-between border-b border-[var(--border-subtle)] pb-5 gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-3 py-1 rounded-full text-xs font-mono font-extrabold bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-sm flex items-center gap-1.5">
+                          <Layers size={13} />
+                          {popoverState.unitName || 'Curriculum Topic'}
+                        </span>
+                        <span className="text-[11px] font-mono font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                          <Sparkles size={12} /> AI Pedagogical Match
+                        </span>
+                      </div>
+                      <h2 className="text-xl sm:text-2xl font-black font-sans text-[var(--text-primary)] tracking-tight leading-snug">
                         {popoverState.title}
                       </h2>
-                      <p className="text-xs text-indigo-500 dark:text-indigo-400 eyecomfort:text-amber-400 font-mono font-extrabold mt-1 flex items-center gap-1">
-                        <Sparkles size={13} className="text-indigo-600 dark:text-indigo-400 eyecomfort:text-amber-400" /> Interactive Pedagogy Recommendations
-                      </p>
                     </div>
 
                     <button
                       onClick={() => setPopoverState((prev) => ({ ...prev, isOpen: false }))}
-                      className="p-2 rounded-2xl bg-[var(--bg-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)] transition-all hover:scale-105 active:scale-95"
+                      aria-label="Close Drawer"
+                      className="p-2.5 rounded-2xl bg-[var(--bg-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] border border-[var(--border-subtle)] transition-all hover:rotate-90 hover:scale-105 active:scale-95 shrink-0"
                     >
                       <X size={18} />
                     </button>
@@ -1104,56 +1112,88 @@ export default function CurriculumPage() {
 
                   {/* Dedicated Hierarchy Reason Callout */}
                   {popoverState.hierarchyReason && (
-                    <div className="p-4 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 text-xs space-y-1.5 shadow-inner">
-                      <strong className="text-indigo-700 dark:text-indigo-400 eyecomfort:text-amber-300 font-mono font-extrabold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
-                        <Info size={13} /> Dedicated Hierarchy Reason:
-                      </strong>
-                      <p className="text-xs leading-relaxed text-[var(--text-secondary)] font-medium">
+                    <div className="p-4 rounded-2xl border-l-4 border-l-indigo-500 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/15 via-indigo-500/5 to-transparent text-xs space-y-1.5 shadow-sm">
+                      <div className="flex items-center gap-1.5 text-[11px] font-mono font-extrabold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider">
+                        <Info size={14} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+                        <span>Dedicated Hierarchy Reason:</span>
+                      </div>
+                      <p className="text-xs leading-relaxed text-[var(--text-secondary)] font-medium font-sans">
                         {popoverState.hierarchyReason}
                       </p>
                     </div>
                   )}
 
                   {/* Top 3 Suggested Pedagogies Section */}
-                  <div className="space-y-3">
-                    <h3 className="text-xs font-mono font-black text-[var(--text-primary)] uppercase tracking-wider flex items-center gap-1.5">
-                      <BookOpen size={14} className="text-indigo-600 dark:text-indigo-400 eyecomfort:text-amber-400" /> Top 3 Suggested Pedagogies
-                    </h3>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-mono font-black text-[var(--text-primary)] uppercase tracking-wider flex items-center gap-2">
+                        <BookOpen size={15} className="text-indigo-600 dark:text-indigo-400" />
+                        Top 3 Suggested Pedagogies
+                      </h3>
+                      <span className="text-[10px] font-mono text-[var(--text-muted)]">Click card for full details</span>
+                    </div>
 
-                    {popoverState.suggestedPedagogies.map((item, pIdx) => (
-                      <div
-                        key={pIdx}
-                        onClick={() => {
-                          handleOpenCategoryModal(item.catalogCategory);
-                        }}
-                        className="cursor-pointer group p-4.5 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] hover:border-indigo-500/60 dark:hover:border-indigo-400/60 hover:bg-[var(--bg-hover)] transition-all duration-300 space-y-2.5 shadow-md hover:shadow-xl"
-                      >
-                        <div className="flex justify-between items-center gap-2">
-                          <span className="text-xs font-mono font-extrabold text-indigo-900 dark:text-indigo-200 eyecomfort:text-amber-300 bg-indigo-100 dark:bg-indigo-950/60 eyecomfort:bg-amber-500/20 border border-indigo-300 dark:border-indigo-500/40 eyecomfort:border-amber-500/40 px-2.5 py-0.5 rounded-full">
-                            Rank #{item.rank || pIdx + 1} Suggested Pedagogy
-                          </span>
-                          <span className="text-xs font-mono font-extrabold text-emerald-900 dark:text-emerald-300 eyecomfort:text-amber-300 bg-emerald-100 dark:bg-emerald-500/20 eyecomfort:bg-amber-500/20 px-2.5 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-500/40 eyecomfort:border-amber-500/40">
-                            {item.confidenceScore}% Match
-                          </span>
+                    {popoverState.suggestedPedagogies.map((item, pIdx) => {
+                      const rankNum = item.rank || pIdx + 1;
+                      
+                      // Rank visual themes
+                      let rankBadgeClass = "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40";
+                      let rankText = "🏆 Rank #1 Top Recommendation";
+                      let borderHoverClass = "hover:border-amber-500/70 hover:shadow-amber-500/10";
+                      
+                      if (rankNum === 2) {
+                        rankBadgeClass = "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/40";
+                        rankText = "⚡ Rank #2 High Match";
+                        borderHoverClass = "hover:border-cyan-500/70 hover:shadow-cyan-500/10";
+                      } else if (rankNum === 3) {
+                        rankBadgeClass = "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40";
+                        rankText = "🎯 Rank #3 Strong Fit";
+                        borderHoverClass = "hover:border-emerald-500/70 hover:shadow-emerald-500/10";
+                      }
+
+                      return (
+                        <div
+                          key={pIdx}
+                          onClick={() => {
+                            handleOpenCategoryModal(item.catalogCategory);
+                          }}
+                          className={`cursor-pointer group p-5 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] ${borderHoverClass} hover:bg-[var(--bg-hover)] transition-all duration-300 space-y-3 shadow-md hover:shadow-2xl relative overflow-hidden`}
+                        >
+                          {/* Rank Header */}
+                          <div className="flex justify-between items-center gap-2 flex-wrap">
+                            <span className={`text-[11px] font-mono font-extrabold border px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs ${rankBadgeClass}`}>
+                              {rankText}
+                            </span>
+                            <span className="text-[11px] font-mono font-extrabold text-emerald-700 dark:text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
+                              <Sparkles size={11} className="text-emerald-500" />
+                              {item.confidenceScore}% Match
+                            </span>
+                          </div>
+
+                          {/* Category Title */}
+                          <h4 className="text-sm sm:text-base font-extrabold font-sans text-[var(--text-primary)] group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors flex items-center justify-between gap-2">
+                            <span className="leading-snug">Category #{item.categoryNumber}: {item.categoryName}</span>
+                            <ChevronRight size={16} className="text-indigo-600 dark:text-indigo-400 group-hover:translate-x-1 transition-transform shrink-0" />
+                          </h4>
+
+                          {/* Reasoning Quote Callout */}
+                          <div className="p-3 rounded-xl bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] font-sans italic leading-relaxed">
+                            &ldquo;{item.reasoning}&rdquo;
+                          </div>
+
+                          {/* Card Footer Bar */}
+                          <div className="pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between gap-3 text-xs">
+                            <div className="text-[11px] text-[var(--text-muted)] truncate min-w-0 flex-1">
+                              Style: <strong className="text-[var(--text-primary)] font-bold">{item.teachingStyle}</strong>
+                            </div>
+                            <span className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-[11px] font-bold shadow-xs transition-all group-hover:scale-[1.03]">
+                              <span>View Methods</span>
+                              <ChevronRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                            </span>
+                          </div>
                         </div>
-
-                        <h4 className="text-sm font-bold text-[var(--text-primary)] group-hover:text-indigo-600 dark:group-hover:text-indigo-400 eyecomfort:group-hover:text-amber-400 transition-colors flex items-center justify-between">
-                          <span>Category #{item.categoryNumber}: {item.categoryName}</span>
-                          <ChevronRight size={15} className="text-indigo-600 dark:text-indigo-400 eyecomfort:text-amber-400 group-hover:translate-x-1 transition-transform shrink-0" />
-                        </h4>
-
-                        <p className="text-xs text-[var(--text-secondary)] italic leading-relaxed font-medium">
-                          &ldquo;{item.reasoning}&rdquo;
-                        </p>
-
-                        <div className="pt-2 border-t border-[var(--border-subtle)] flex justify-between items-center text-[11px] text-[var(--text-muted)]">
-                          <span>Style: <strong className="text-[var(--text-primary)] font-bold">{item.teachingStyle}</strong></span>
-                          <span className="text-indigo-700 dark:text-indigo-300 eyecomfort:text-amber-300 font-extrabold font-mono flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-                            Click for methods &rarr;
-                          </span>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1161,7 +1201,7 @@ export default function CurriculumPage() {
                 <div className="pt-4 mt-6 border-t border-[var(--border-subtle)]">
                   <Button
                     onClick={() => setPopoverState((prev) => ({ ...prev, isOpen: false }))}
-                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-mono text-xs font-black py-3 rounded-2xl shadow-md transition-all hover:scale-[1.01]"
+                    className="w-full bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-mono text-xs font-black py-3 rounded-2xl shadow-lg transition-all hover:scale-[1.01] active:scale-[0.99]"
                   >
                     Close Popover Drawer
                   </Button>
