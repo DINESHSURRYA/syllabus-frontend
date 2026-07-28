@@ -1,0 +1,456 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* =========================================================
+     LIGHT MODE SEMANTIC CSS VARIABLES (Default / .light)
+     ========================================================= */
+  :root,
+  html.light,
+  .light {
+    color-scheme: light;
+
+    /* Light Theme Token Overrides */
+    --background: 210 40% 98%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 36.9%; /* Darker gray for readability */
+    --border: 214.3 31.8% 85%;            /* Sharper border contrast */
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+
+    --bg-primary: #f8fafc;
+    --bg-secondary: #ffffff;
+    --bg-card: #ffffff;
+    --bg-hover: #f1f5f9;
+    --bg-muted: #e2e8f0;
+    --bg-subtle: #f8fafc;
+
+    --text-primary: #0f172a;    /* High contrast dark tone (slate-900) */
+    --text-secondary: #334155;  /* Readable slate (slate-700) */
+    --text-muted: #475569;      /* Darker muted slate (slate-600) */
+    --text-accent: #4f46e5;     /* Bold Indigo accent */
+
+    --border-subtle: #cbd5e1;   /* Defined border contrast (slate-300) */
+    --border-strong: #94a3b8;   /* Structural border (slate-400) */
+    --border-focus: #4f46e5;
+
+    --accent-primary: #4f46e5;
+    --accent-secondary: #4338ca;
+    --accent-emerald: #047857;
+    --accent-amber: #b45309;
+
+    /* Light Mode Color Overrides (WCAG 4.5:1 Contrast Enforcer) */
+    --color-accent-light-blue: #0284c7; /* Darker, readable sky blue */
+    --color-container-bg-blue: #f0f9ff; /* Soft tint background */
+    --color-container-border-blue: #bae6fd; /* Light border */
+    --color-container-text-blue: #0369a1; /* High-contrast readable dark blue text */
+
+    --badge-beginner-bg: #dcfce7;
+    --badge-beginner-text: #14532d;
+    --badge-beginner-border: #86efac;
+
+    --badge-intermediate-bg: #e0f2fe;
+    --badge-intermediate-text: #075985;
+    --badge-intermediate-border: #7dd3fc;
+
+    --badge-advanced-bg: #fae8ff;
+    --badge-advanced-text: #701a75;
+    --badge-advanced-border: #f0abfc;
+
+    --surface-rgb: 15 23 42;
+    --accent-rgb: 79 70 229;
+    --background-rgb: 248 250 252;
+    --success-rgb: 16 185 129;
+    --error-rgb: 225 29 72;
+    --muted-rgb: 100 116 139;
+
+    --shadow-card: 0 1px 3px 0 rgba(15, 23, 42, 0.08), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
+    --shadow-hover: 0 10px 25px -5px rgba(79, 70, 229, 0.12), 0 4px 10px -2px rgba(15, 23, 42, 0.06);
+
+    /* Ignition Scrollbar Tokens */
+    --scrollbar-track: #f1f5f9;
+    --scrollbar-thumb: #cbd5e1;
+    --scrollbar-thumb-hover: #f97316;
+    --scrollbar-thumb-glow: 0 0 10px rgba(249, 115, 22, 0.6), 0 0 14px rgba(234, 88, 12, 0.35);
+  }
+
+  /* =========================================================
+     DARK MODE SEMANTIC CSS VARIABLES (.dark)
+     ========================================================= */
+  html.dark {
+    color-scheme: dark;
+
+    --bg-primary: #0f172a;
+    --bg-secondary: #1e293b;
+    --bg-card: #0f172a;
+    --bg-hover: #1e293b;
+    --bg-muted: #334155;
+    --bg-subtle: #0f172a;
+
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --text-accent: #60a5fa;
+
+    --border-subtle: rgba(255, 255, 255, 0.1);
+    --border-strong: rgba(255, 255, 255, 0.2);
+    --border-focus: #2563eb;
+
+    --accent-primary: #2563eb;
+    --accent-secondary: #4f46e5;
+    --accent-emerald: #10b981;
+    --accent-amber: #f59e0b;
+
+    --badge-beginner-bg: rgba(16, 185, 129, 0.15);
+    --badge-beginner-text: #34d399;
+    --badge-beginner-border: rgba(16, 185, 129, 0.4);
+
+    --badge-intermediate-bg: rgba(37, 99, 235, 0.2);
+    --badge-intermediate-text: #93c5fd;
+    --badge-intermediate-border: rgba(37, 99, 235, 0.5);
+
+    --badge-advanced-bg: rgba(168, 85, 247, 0.15);
+    --badge-advanced-text: #c084fc;
+    --badge-advanced-border: rgba(168, 85, 247, 0.4);
+
+    --surface-rgb: 248 250 252;
+    --accent-rgb: 37 99 235;
+    --background-rgb: 15 23 42;
+    --success-rgb: 16 185 129;
+    --error-rgb: 244 63 94;
+    --muted-rgb: 148 163 184;
+
+    --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+    --shadow-hover: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+
+    /* Ignition Scrollbar Tokens */
+    --scrollbar-track: #1e293b;
+    --scrollbar-thumb: #334155;
+    --scrollbar-thumb-hover: #2563eb;
+    --scrollbar-thumb-glow: none;
+  }
+
+  /* =========================================================
+     EYE COMFORT / EYE PROTECTION MODE (.eyecomfort)
+     ========================================================= */
+  html.eyecomfort {
+    color-scheme: dark;
+
+    --bg-primary: #1c1917;    /* Soft warm stone background */
+    --bg-secondary: #26221f;  /* Warm surface */
+    --bg-card: #292524;       /* Warm Card background */
+    --bg-hover: #332d2a;      /* Soft warm hover */
+    --bg-muted: #44403c;
+    --bg-subtle: #24201d;
+
+    --text-primary: #fef3c7;   /* Warm soft cream text */
+    --text-secondary: #fde68a; /* Warm amber text */
+    --text-muted: #d97706;     /* Amber muted */
+    --text-accent: #f59e0b;    /* Eye-comfort Warm Amber accent */
+
+    --border-subtle: rgba(245, 158, 11, 0.25);
+    --border-strong: rgba(245, 158, 11, 0.45);
+    --border-focus: #f59e0b;
+
+    --accent-primary: #f59e0b;
+    --accent-secondary: #d97706;
+    --accent-emerald: #10b981;
+    --accent-amber: #f59e0b;
+
+    --badge-beginner-bg: rgba(245, 158, 11, 0.15);
+    --badge-beginner-text: #fbbf24;
+    --badge-beginner-border: rgba(245, 158, 11, 0.35);
+
+    --badge-intermediate-bg: rgba(217, 119, 6, 0.15);
+    --badge-intermediate-text: #f59e0b;
+    --badge-intermediate-border: rgba(217, 119, 6, 0.35);
+
+    --badge-advanced-bg: rgba(245, 158, 11, 0.15);
+    --badge-advanced-text: #fcd34d;
+    --badge-advanced-border: rgba(245, 158, 11, 0.35);
+
+    --surface-rgb: 254 243 199;
+    --accent-rgb: 245 158 11;
+    --background-rgb: 28 25 23;
+    --success-rgb: 16 185 129;
+    --error-rgb: 244 63 94;
+    --muted-rgb: 217 119 6;
+
+    --shadow-card: 0 0 30px 0 rgba(245, 158, 11, 0.12);
+    --shadow-hover: 0 0 35px 0 rgba(245, 158, 11, 0.25);
+
+    /* Ignition Scrollbar Tokens */
+    --scrollbar-track: #26221f;
+    --scrollbar-thumb: #44403c;
+    --scrollbar-thumb-hover: #f59e0b;
+    --scrollbar-thumb-glow: 0 0 12px rgba(245, 158, 11, 0.75), 0 0 16px rgba(217, 119, 6, 0.4);
+  }
+}
+
+html {
+  width: 100%;
+  max-width: 100%;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  width: 100%;
+  max-width: 100%;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  transition: background-color 0.25s ease, color 0.25s ease;
+  overflow-x: hidden;
+}
+
+/* Background grid overlay that adapts to light/dark/eyecomfort */
+html.light body {
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.05), transparent 50%),
+    radial-gradient(circle at 100% 100%, rgba(2, 132, 199, 0.05), transparent 50%),
+    linear-gradient(to right, rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 3rem 3rem, 3rem 3rem;
+}
+
+html.dark body {
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 3rem 3rem, 3rem 3rem;
+}
+
+html.eyecomfort body {
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(245, 158, 11, 0.15), transparent 45%),
+    radial-gradient(circle at 100% 100%, rgba(217, 119, 6, 0.1), transparent 45%),
+    linear-gradient(to right, rgba(245, 158, 11, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(245, 158, 11, 0.03) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 3rem 3rem, 3rem 3rem;
+}
+
+/* Semantic UI Card Helper */
+.semantic-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-card);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.semantic-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-hover);
+}
+
+.semantic-input {
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  transition: border-color 0.2s ease;
+}
+
+.semantic-input:focus {
+  border-color: var(--border-focus);
+  outline: none;
+}
+
+/* Shimmer Loading Animation */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer-loader {
+  background: linear-gradient(
+    90deg,
+    var(--bg-hover) 0%,
+    var(--bg-muted) 50%,
+    var(--bg-hover) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+/* =========================================================
+   REFINED MODERN IGNITION SCROLLBAR STYLING
+   ========================================================= */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 9999px;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  box-shadow: var(--scrollbar-thumb-glow);
+}
+
+/* Custom Scrollbar Utility Classes */
+.custom-scrollbar,
+.custom-sidebar-scrollbar {
+  scrollbar-width: thin !important;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track) !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar,
+.custom-sidebar-scrollbar::-webkit-scrollbar {
+  display: block !important;
+  width: 7px !important;
+  height: 7px !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track,
+.custom-sidebar-scrollbar::-webkit-scrollbar-track {
+  background: var(--scrollbar-track) !important;
+  border-radius: 9999px !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb,
+.custom-sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb) !important;
+  border-radius: 9999px !important;
+  transition: background 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover,
+.custom-sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover) !important;
+  box-shadow: var(--scrollbar-thumb-glow) !important;
+}
+
+::selection {
+  background-color: var(--accent-primary);
+  color: #ffffff;
+}
+
+/* =========================================================
+   DYNAMIC FONT SIZE ACCESSIBILITY MODES (SCOPED TO TEXT ONLY)
+   ========================================================= */
+:root {
+  --base-font-size: 16px;
+}
+
+html.font-size-sm {
+  --base-font-size: 14px;
+}
+
+html.font-size-md {
+  --base-font-size: 16px;
+}
+
+html.font-size-lg {
+  --base-font-size: 18px;
+}
+
+/* Text-only scaling rules: adjust text size proportionally without scaling layout paddings/margins */
+body, p, span, h1, h2, h3, h4, h5, h6, label, button, a, li, input, select, textarea {
+  font-size: var(--base-font-size);
+}
+
+.text-\[10px\] { font-size: calc(var(--base-font-size) * 0.625) !important; }
+.text-\[11px\] { font-size: calc(var(--base-font-size) * 0.6875) !important; }
+.text-xs { font-size: calc(var(--base-font-size) * 0.75) !important; }
+.text-sm { font-size: calc(var(--base-font-size) * 0.875) !important; }
+.text-base { font-size: calc(var(--base-font-size) * 1.0) !important; }
+.text-lg { font-size: calc(var(--base-font-size) * 1.125) !important; }
+.text-xl { font-size: calc(var(--base-font-size) * 1.25) !important; }
+.text-2xl { font-size: calc(var(--base-font-size) * 1.5) !important; }
+.text-3xl { font-size: calc(var(--base-font-size) * 1.875) !important; }
+.text-4xl { font-size: calc(var(--base-font-size) * 2.25) !important; }
+
+/* Subpage Scrolling Pane Utility */
+.subpage-pane {
+  background-color: var(--bg-card);
+  border: 2px solid var(--border-strong);
+  box-shadow: inset 0 2px 8px 0 rgba(0, 0, 0, 0.1), var(--shadow-card);
+}
+
+
+/* =========================================================
+   TYPOGRAPHY SELECTOR OPTIONS & GLOBAL SPREAD OVERRIDES
+   ========================================================= */
+html.font-family-sans,
+html.font-family-sans body,
+html.font-family-sans h1,
+html.font-family-sans h2,
+html.font-family-sans h3,
+html.font-family-sans h4,
+html.font-family-sans h5,
+html.font-family-sans h6,
+html.font-family-sans p,
+html.font-family-sans span,
+html.font-family-sans div,
+html.font-family-sans button,
+html.font-family-sans input,
+html.font-family-sans label,
+html.font-family-sans textarea,
+html.font-family-sans a,
+html.font-family-sans li {
+  font-family: var(--font-inter), 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+html.font-family-serif,
+html.font-family-serif body,
+html.font-family-serif h1,
+html.font-family-serif h2,
+html.font-family-serif h3,
+html.font-family-serif h4,
+html.font-family-serif h5,
+html.font-family-serif h6,
+html.font-family-serif p,
+html.font-family-serif span,
+html.font-family-serif div,
+html.font-family-serif button,
+html.font-family-serif input,
+html.font-family-serif label,
+html.font-family-serif textarea,
+html.font-family-serif a,
+html.font-family-serif li {
+  font-family: var(--font-merriweather), 'Merriweather', Georgia, Cambria, 'Times New Roman', serif !important;
+}
+
+html.font-family-mono,
+html.font-family-mono body,
+html.font-family-mono h1,
+html.font-family-mono h2,
+html.font-family-mono h3,
+html.font-family-mono h4,
+html.font-family-mono h5,
+html.font-family-mono h6,
+html.font-family-mono p,
+html.font-family-mono span,
+html.font-family-mono div,
+html.font-family-mono button,
+html.font-family-mono input,
+html.font-family-mono label,
+html.font-family-mono textarea,
+html.font-family-mono a,
+html.font-family-mono li {
+  font-family: var(--font-jetbrains-mono), 'JetBrains Mono', 'Fira Code', Consolas, monospace !important;
+}
+
+
