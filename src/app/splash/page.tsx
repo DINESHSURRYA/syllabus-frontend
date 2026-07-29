@@ -1,3 +1,4 @@
+import './styles/page.css';
 import { SplashScreen } from '@/components/splash-screen';
 
 export const metadata = {

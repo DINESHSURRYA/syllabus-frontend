@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -11,9 +11,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { UploadZone } from '@/components/upload-zone';
 import { checkCourseCodeExists } from '@/lib/api-client';
-import { useSyllabusStore, emptySyllabus } from '@/lib/store';
-import { useGuideStore } from '@/lib/guide-store';
+import { useSyllabusStore, emptySyllabus, useGuideStore } from '@/stores';
 import { useGlobalLoading } from '@/components/providers/loading-provider';
+
+import { CourseCodeModal, ExistingCourseData } from '@/components/syllabus/course-code-modal';
 
 export default function UploadPage() {
   const router = useRouter();
@@ -22,6 +23,9 @@ export default function UploadPage() {
   const [isCheckingCode, setIsCheckingCode] = useState(false);
   const [courseCodeStatus, setCourseCodeStatus] = useState<'idle' | 'approved' | 'duplicate'>('idle');
   const [courseCodeError, setCourseCodeError] = useState<string | null>(null);
+
+  const [existingCourseData, setExistingCourseData] = useState<ExistingCourseData | null>(null);
+  const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isExtracting, setIsExtracting] = useState(false);
@@ -50,13 +54,21 @@ export default function UploadPage() {
     setCourseCodeError(null);
 
     try {
-      const res = await checkCourseCodeExists(trimmed);
+      const res: any = await checkCourseCodeExists(trimmed);
       if (res.exists) {
         setCourseCodeStatus('duplicate');
         setDuplicateDetectedCode(trimmed.toUpperCase());
-        setCourseCodeError(
-          "This syllabus is already in the syllabus repository. To upload an existing syllabus, you must delete the existing one first."
-        );
+        
+        setExistingCourseData({
+          courseCode: res.courseCode || trimmed.toUpperCase(),
+          courseName: res.courseName || 'Existing Course',
+          department: res.department || 'Computer Science & Engineering',
+          uploadedOn: res.uploadedOn || new Date().toISOString(),
+          uploadedBy: res.uploadedBy || 'Admin User',
+          status: res.status || 'Verified',
+          existingSyllabusId: res.existingSyllabusId || trimmed.toUpperCase()
+        });
+        setIsDuplicateModalOpen(true);
       } else {
         setCourseCodeStatus('approved');
         setCourseCodeError(null);
@@ -272,13 +284,32 @@ export default function UploadPage() {
                   <FileText size={16} className="text-indigo-600 dark:text-cyan-400" />
                   Streamlined Single-Step Workflow
                 </div>
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Enter a unique course code to unlock document browsing. Once selected, your document is processed automatically and transferred directly to the Verification Editor.
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  Select your syllabus file to initiate parsing and verify units instantly.
                 </p>
               </div>
             </CardContent>
           </Card>
         </div>
+
+        {/* Duplicate Course Code Modal */}
+        <CourseCodeModal
+          isOpen={isDuplicateModalOpen}
+          onClose={() => setIsDuplicateModalOpen(false)}
+          courseData={existingCourseData}
+          onViewExisting={(syllabusId) => {
+            setIsDuplicateModalOpen(false);
+            router.push(`/verification?syllabusId=${syllabusId}`);
+          }}
+          onCreateNewVersion={(code) => {
+            setIsDuplicateModalOpen(false);
+            setCourseCodeStatus('approved');
+            setCourseCodeError(null);
+            setWorkflowStep('upload_file');
+            updateCourseDetails({ code: `${code}_V2` });
+            toast.info(`Creating Version 2 for ${code}`);
+          }}
+        />
       </div>
     </AppShell>
   );

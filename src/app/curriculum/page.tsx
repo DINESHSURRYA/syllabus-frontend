@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -25,8 +25,10 @@ import {
 import dynamic from 'next/dynamic';
 import { AppShell } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
-import { useCurriculumData } from '@/hooks/use-curriculum-data';
-import { useGuideStore } from '@/lib/guide-store';
+import { useCurriculumData } from '@/hooks';
+import { curriculumApi, syllabusApi } from '@/lib/api';
+import { CurriculumService } from '@/lib/services/curriculum-service';
+import { useGuideStore } from '@/stores';
 import { PEDAGOGIES_CATALOG_DATA, CatalogPedagogyCategory } from '@/lib/data/pedagogies-catalog-data';
 import { getUnitRomanTitle, formatUnitHeader } from '@/lib/normalizer';
 
@@ -105,12 +107,27 @@ export default function CurriculumPage() {
   // Active navigation tab
   const [activeTab, setActiveTab] = useState<'board' | 'pedagogy' | 'experiments'>('board');
 
+  // Track active topic pedagogies reveal state (hidden by default, shown when clicked)
+  const [openPedagogyTopics, setOpenPedagogyTopics] = useState<Record<string, boolean>>({});
+
+  const toggleTopicPedagogies = (topicId: string) => {
+    setOpenPedagogyTopics(prev => ({
+      ...prev,
+      [topicId]: !prev[topicId]
+    }));
+  };
+
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get('tab');
       if (tabParam === 'pedagogy' || tabParam === 'experiments' || tabParam === 'board') {
         setActiveTab(tabParam as any);
+      }
+      const idParam = params.get('id') || params.get('courseId') || params.get('syllabusId');
+      if (idParam) {
+        setSelectedSyllabusId(idParam);
+        setSearchQuery(idParam);
       }
     }
   }, []);
@@ -165,11 +182,24 @@ export default function CurriculumPage() {
           hoursMap[uNum] = hVal;
         }
       });
-      if (Object.keys(hoursMap).length > 0) {
-        setUnitHoursState(hoursMap);
-      }
+      setUnitHoursState(hoursMap);
+    } else {
+      setUnitHoursState({});
     }
   }, [hierarchy]);
+
+  // Compute Total Course Hours dynamically from active unit hours or hierarchy
+  const totalCourseHours = useMemo(() => {
+    if (unitHoursState && Object.keys(unitHoursState).length > 0) {
+      const sumFromState = Object.values(unitHoursState).reduce((acc, h) => acc + (Number(h) || 0), 0);
+      if (sumFromState > 0) return sumFromState;
+    }
+    if (hierarchy && hierarchy.length > 0) {
+      const sumFromHierarchy = hierarchy.reduce((acc, u) => acc + (Number(u.learningHours) || 0), 0);
+      if (sumFromHierarchy > 0) return sumFromHierarchy;
+    }
+    return course?.hours || 45;
+  }, [unitHoursState, hierarchy, course]);
 
   // Filter saved syllabi for dropdown
   const filteredSyllabi = useMemo(() => {
@@ -238,30 +268,17 @@ export default function CurriculumPage() {
     setAppliedUnits(selected);
     setAppliedDifficulty(difficultyFilter);
 
-    // PostgreSQL Course Fetching Logic on "Apply"
     try {
-      const targetId = selectedSyllabusId || activeSyllabus?.code || activeSyllabus?.id || 'CS3451';
-      const res = await fetch(`http://localhost:8000/api/courses/${encodeURIComponent(targetId)}`);
-      if (res.ok) {
-        const dbCourse = await res.json();
-        if (dbCourse && dbCourse.units) {
-          // Sync PostgreSQL unit hours & raw topic state
-          const hoursMap: Record<number, number> = {};
-          dbCourse.units.forEach((u: any, idx: number) => {
-            const uNum = u.unitNumber || idx + 1;
-            hoursMap[uNum] = u.learningHours || 9;
-          });
-          if (Object.keys(hoursMap).length > 0) {
-            setUnitHoursState(prev => ({ ...prev, ...hoursMap }));
-          }
-        }
+      const searchOrSelected = searchQuery.trim().toUpperCase() || selectedSyllabusId || activeSyllabus?.code || activeSyllabus?.id || 'CP4391';
+      const targetId = searchOrSelected.replace(/\s+/g, '');
+
+      if (targetId) {
+        setSelectedSyllabusId(targetId);
       }
     } catch (err) {
-      console.warn('[ApplyFilters] PostgreSQL course fetch notice:', err);
+      console.warn('[ApplyFilters] Filter update notice:', err);
     } finally {
-      setTimeout(() => {
-        setIsApplying(false);
-      }, 300);
+      setIsApplying(false);
     }
   };
 
@@ -433,24 +450,23 @@ export default function CurriculumPage() {
 
     try {
       // Endpoint call to OpenAI API /api/generate-hierarchy
-      const res = await fetch('http://localhost:8000/api/generate-hierarchy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      let data: any = null;
+      try {
+        data = await curriculumApi.generateHierarchy({
           courseCode: activeSyllabus?.code || 'CS3451',
           courseTitle: activeSyllabus?.title || 'Introduction to Operating Systems',
           unit: uTitle || `Unit ${unitNum}`,
-          topics: rawDbTopics
-        })
-      });
+          topics: rawDbTopics,
+        });
+      } catch (e) {
+        console.warn('Direct generateHierarchy failed, trying fallback:', e);
+      }
 
-      if (res.ok) {
-        const data = await res.json();
+      if (data) {
         const hierarchyList = data?.hierarchy || data?.topics;
 
-        if (data && Array.isArray(hierarchyList) && hierarchyList.length > 0) {
+        if (Array.isArray(hierarchyList) && hierarchyList.length > 0) {
           const formattedTopics = hierarchyList.map((item: any, tIdx: number) => {
-            // Map top 3 pedagogies to catalog
             const rawPeds = item.top_3_pedagogies || item.top3Pedagogies || item.suggestedPedagogies || [];
             const pedagogies = rawPeds.slice(0, 3).map((p: any, pIdx: number) => {
               const pName = p.name || p.strategyName || p.method || "Active Practice";
@@ -469,7 +485,6 @@ export default function CurriculumPage() {
               };
             });
 
-            // Map subtopics array
             const rawSubs = item.subtopics || [];
             const formattedSubtopics = rawSubs.map((sub: any, sIdx: number) => {
               const subTitle = typeof sub === 'string' ? sub : sub.title || sub.name || `Subtopic ${sIdx + 1}`;
@@ -501,25 +516,22 @@ export default function CurriculumPage() {
       }
 
       // Try legacy endpoint fallback if route returned different structure
-      const legacyRes = await fetch('http://localhost:8000/api/curriculum/generate-unit-hierarchy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      try {
+        const legacyData = await curriculumApi.generateUnitHierarchy({
           courseCode: activeSyllabus?.code || 'CS3451',
           courseTitle: activeSyllabus?.title || 'Operating Systems',
           unitNumber: unitNum,
           unitTitle: uTitle,
-          unitHours: currentHours
-        })
-      });
+          unitHours: currentHours,
+        });
 
-      if (legacyRes.ok) {
-        const legacyData = await legacyRes.json();
         if (legacyData && Array.isArray(legacyData.topics) && legacyData.topics.length > 0) {
           setDynamicUnitTopics(prev => ({ ...prev, [unitNum]: legacyData.topics }));
           setGeneratingUnit(prev => ({ ...prev, [unitNum]: false }));
           return;
         }
+      } catch (e) {
+        console.warn('Legacy generateUnitHierarchy failed:', e);
       }
 
       generateClientFallbackHierarchy(unitNum, uTitle, currentHours);
@@ -777,7 +789,7 @@ export default function CurriculumPage() {
                   <span>•</span>
                   <span className="text-emerald-400 font-bold">{course?.credits || 4} Credits</span>
                   <span>•</span>
-                  <span className="text-indigo-400 font-bold">Total Course Hours: {course?.hours || 45}h</span>
+                  <span className="text-indigo-400 font-bold">Total Course Hours: {totalCourseHours}h</span>
                   <span className="text-emerald-500 font-semibold">● Dynamic AI Sync</span>
                 </div>
               </div>
@@ -938,13 +950,22 @@ export default function CurriculumPage() {
                           ) : (
                             rawTopics.map((tNode: any, tIdx: number) => {
                               const subtopics = tNode.subtopics || tNode.children || [];
-                              const hierarchyReasonText = tNode.hierarchyReason || 
+                              const topicKey = tNode.id || `topic-${unitNum}-${tIdx+1}`;
+                              const showPedagogies = !!openPedagogyTopics[topicKey];
+
+                              const hierarchyReasonText = tNode.orderingReason || tNode.hierarchyReason || 
                                 `Establishes prerequisite foundational knowledge for ${tNode.title} prior to advanced applications in ${unitRomanBadge}.`;
                               
                               const similarTopicsList = tNode.similarTopics || [
                                 `${tNode.title} Theory`,
                                 "Algorithmic Mechanics",
                                 "System Integration"
+                              ];
+
+                              const top3PedagogiesList = tNode.pedagogies || tNode.top3Pedagogies || [
+                                { title: "Interactive Demonstration & EMR Simulation", type: "Experiential Learning", description: `Use visual and simulation tools to demonstrate wave theory and principles of ${tNode.title}.` },
+                                { title: "Problem-Based Math Worksheets", type: "Practice", description: `Apply Planck's and Wien's displacement laws to solve analytical problems.` },
+                                { title: "Flipped Classroom Discussion", type: "Collaborative", description: `Compare active vs passive radiation sources and evaluate real-world trade-offs.` }
                               ];
 
                               return (
@@ -967,12 +988,15 @@ export default function CurriculumPage() {
                                       <ChevronRight size={15} className="text-indigo-600 group-hover:translate-x-1 transition-transform shrink-0" />
                                     </div>
 
-                                    {/* Interactive Pedagogy Popover Trigger */}
+                                    {/* Interactive Pedagogy Trigger (Toggles Inline View + Opens Side Drawer) */}
                                     <button
-                                      onClick={() => handleOpenTopicPedagogyPopover(tNode, unitRomanBadge)}
+                                      onClick={() => {
+                                        toggleTopicPedagogies(topicKey);
+                                        handleOpenTopicPedagogyPopover(tNode, unitRomanBadge);
+                                      }}
                                       className="inline-flex items-center gap-1.5 text-xs font-mono font-bold px-3 py-1.5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 transition-all shadow-sm shrink-0 self-start sm:self-center"
                                     >
-                                      <Sparkles size={12} /> Top 3 Pedagogies
+                                      <Sparkles size={12} /> {showPedagogies ? "Hide Pedagogies" : "Top 3 Pedagogies"}
                                     </button>
                                   </div>
 
@@ -1001,7 +1025,7 @@ export default function CurriculumPage() {
                                     </p>
                                   </div>
 
-                                  {/* Nested Subtopics List (Hierarchical Tree Format - NO Subtopic Hours Tag) */}
+                                  {/* Nested Subtopics List (Hierarchical Tree Format) */}
                                   {subtopics.length > 0 && (
                                     <div className="pl-3 sm:pl-5 border-l-2 border-indigo-500/30 space-y-2 pt-1">
                                       <span className="text-[11px] font-mono font-bold text-[var(--text-muted)] block">
@@ -1009,8 +1033,8 @@ export default function CurriculumPage() {
                                       </span>
                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                                         {subtopics.map((subNode: any, sIdx: number) => {
-                                          const subTitle = subNode.title || subNode;
-                                          const subReason = subNode.hierarchyReason || `Provides granular breakdown for ${subTitle}.`;
+                                          const subTitle = subNode.title || subNode.name || (typeof subNode === 'string' ? subNode : `Subtopic ${sIdx+1}`);
+                                          const subReason = subNode.reason || subNode.hierarchyReason || `Provides granular breakdown supporting ${tNode.title}.`;
                                           return (
                                             <div
                                               key={sIdx}
@@ -1023,7 +1047,7 @@ export default function CurriculumPage() {
                                                   {subTitle}
                                                 </div>
                                                 <div className="text-[10px] font-mono text-[var(--text-muted)] mt-1 line-clamp-1">
-                                                  Reason: {subReason}
+                                                  {subReason}
                                                 </div>
                                               </div>
                                               <Sparkles size={11} className="text-indigo-400 opacity-60 group-hover:opacity-100 transition-opacity shrink-0" />
@@ -1033,6 +1057,45 @@ export default function CurriculumPage() {
                                       </div>
                                     </div>
                                   )}
+
+                                  {/* REVEALABLE PEDAGOGIES SECTION (Only renders if clicked) */}
+                                  <AnimatePresence>
+                                    {showPedagogies && (
+                                      <motion.div
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: "auto" }}
+                                        exit={{ opacity: 0, height: 0 }}
+                                        className="mt-4 p-3.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-2xl space-y-2.5"
+                                      >
+                                        <h5 className="font-bold text-indigo-900 dark:text-indigo-200 text-xs sm:text-sm font-mono flex items-center gap-1.5">
+                                          💡 Recommended Top 3 Pedagogies
+                                        </h5>
+                                        <div className="space-y-2">
+                                          {top3PedagogiesList.map((ped: any, idx: number) => {
+                                            const pedTitle = ped.title || ped.pedagogyName || ped.name || `Pedagogy ${idx + 1}`;
+                                            const pedType = ped.type || ped.method || "Strategy";
+                                            const pedDesc = ped.description || ped.rationale || ped.reason || "";
+
+                                            return (
+                                              <div key={idx} className="bg-white dark:bg-[var(--bg-card)] p-3 rounded-xl border border-indigo-100 dark:border-indigo-900 text-xs shadow-xs">
+                                                <div className="flex items-center justify-between">
+                                                  <span className="font-bold text-indigo-700 dark:text-indigo-300">
+                                                    {idx + 1}. {pedTitle}
+                                                  </span>{" "}
+                                                  <span className="text-gray-400 text-[10px]">({pedType})</span>
+                                                </div>
+                                                {pedDesc && (
+                                                  <p className="text-gray-600 dark:text-gray-300 text-[11px] mt-1 leading-relaxed">
+                                                    {pedDesc}
+                                                  </p>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
                                 </div>
                               );
                             })

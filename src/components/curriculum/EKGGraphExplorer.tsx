@@ -1,9 +1,10 @@
 "use client";
-
+import './styles/EKGGraphExplorer.css';
 import React, { useState, useEffect } from "react";
 import { Share2, RefreshCw, ZoomIn, Info } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { curriculumApi } from "@/lib/api";
 
 interface EKGGraphExplorerProps {
   courseId?: string;
@@ -17,11 +18,8 @@ export const EKGGraphExplorer: React.FC<EKGGraphExplorerProps> = ({ courseId }) 
   const fetchGraph = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/ekg/${courseId || "default"}/full-graph`);
-      if (res.ok) {
-        const data = await res.json();
-        setGraphData(data);
-      }
+      const data = await curriculumApi.getEkgFullGraph(courseId || "default");
+      setGraphData(data);
     } catch (err) {
       console.warn("Using fallback client graph", err);
       const fallbackNodes = [

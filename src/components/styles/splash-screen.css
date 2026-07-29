@@ -1,0 +1,5 @@
+/* Styles for splash-screen.tsx */
+
+.splash-spin-4s {
+  animation-duration: 4s;
+}

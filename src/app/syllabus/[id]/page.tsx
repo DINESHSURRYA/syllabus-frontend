@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -48,9 +48,8 @@ import {
 } from '@/lib/api-client';
 import { VersionCompareModal } from '@/components/syllabus/version-compare-modal';
 import { CoPoMappingModal } from '@/components/syllabus/copo-mapping-modal';
-import { useSyllabusStore, emptySyllabus } from '@/lib/store';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { useSyllabusStore, emptySyllabus } from '@/stores';
+import { syllabusApi } from '@/lib/api';
 
 export default function SyllabusDetailPage() {
   const params = useParams();
@@ -70,9 +69,7 @@ export default function SyllabusDetailPage() {
   const loadSyllabus = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/syllabus/${encodeURIComponent(syllabusId)}`);
-      if (!res.ok) throw new Error("Failed to fetch syllabus");
-      const data = await res.json();
+      const data = await syllabusApi.getSyllabus(syllabusId);
       setSyllabusData(data);
 
       // Fetch versions

@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/hierarchy-tree.css';
 import React, { useEffect, useRef } from "react";
 import { 
   BookOpen, 

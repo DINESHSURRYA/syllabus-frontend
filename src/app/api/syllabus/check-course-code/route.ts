@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server';
+import { API_CONFIG } from '@/lib/api/config';
+import { API } from '@/lib/api/endpoints';
+import { buildUrl } from '@/lib/api/client';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -11,9 +14,8 @@ export async function GET(request: Request) {
   const cleanCode = courseCode.trim().toUpperCase();
 
   try {
-    // Check against backend API if available
-    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    const res = await fetch(`${backendUrl}/api/syllabus?search=${encodeURIComponent(cleanCode)}`, {
+    const url = buildUrl(API.syllabus.list, { search: cleanCode });
+    const res = await fetch(url, {
       cache: 'no-store'
     });
     if (res.ok) {

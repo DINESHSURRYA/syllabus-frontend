@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -22,7 +22,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useEvaluatorStore } from '@/lib/evaluator-store';
+import { useEvaluatorStore } from '@/stores';
 import { fetchAdminInterviews, AdminInterviewSummary } from '@/lib/evaluator-api';
 import {
   EvaluatorPageHeader,

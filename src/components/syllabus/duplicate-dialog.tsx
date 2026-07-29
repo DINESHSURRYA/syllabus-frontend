@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/duplicate-dialog.css';
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 

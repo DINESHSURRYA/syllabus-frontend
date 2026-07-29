@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/splash-screen.css';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -196,7 +196,7 @@ export function SplashScreen() {
                 ? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-200 shadow-sm'
                 : 'border-indigo-300 bg-indigo-50 text-indigo-700 shadow-sm'
             }`}>
-              <Sparkles className={`w-4 h-4 animate-spin ${isDark ? 'text-indigo-300' : 'text-indigo-600'}`} style={{ animationDuration: '4s' }} />
+              <Sparkles className={`w-4 h-4 animate-spin splash-spin-4s ${isDark ? 'text-indigo-300' : 'text-indigo-600'}`} />
               <span className="text-xs font-mono font-bold tracking-widest uppercase">AI-POWERED CURRICULUM FRONTEND</span>
             </div>
 

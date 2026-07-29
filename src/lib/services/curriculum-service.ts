@@ -39,12 +39,322 @@ export interface CourseDataModel {
   textbooks?: any[];
   references?: any[];
   hierarchy: CurriculumTopic[];
+  units?: any[];
   tables?: Array<{ id: string; category: string; page?: number; headers: string[]; rows: string[][] }>;
 }
 
-import { useSyllabusStore } from '@/lib/store';
+import { useSyllabusStore } from '@/stores';
+import { curriculumApi } from '@/lib/api';
 
 export class CurriculumService {
+  static createDefaultSyllabusForCourse(courseCode: string) {
+    const cleanCode = (courseCode || 'COURSE101').toUpperCase().trim();
+    
+    const knownTitles: Record<string, string> = {
+      'CE3022': 'REMOTE SENSING CONCEPTS',
+      'GE3451': 'ENVIRONMENTAL SCIENCES AND SUSTAINABILITY',
+      'CS3451': 'OPERATING SYSTEMS',
+      'CS3491': 'ARTIFICIAL INTELLIGENCE AND MACHINE LEARNING',
+      'CS3591': 'COMPUTER NETWORKS',
+      'CS3691': 'EMBEDDED SYSTEMS AND IOT',
+    };
+
+    const title = knownTitles[cleanCode] || `${cleanCode}: CORE CURRICULUM CONCEPTS`;
+
+    return {
+      id: cleanCode,
+      courseCode: cleanCode,
+      courseName: title,
+      department: 'Computer Science & Engineering',
+      semester: 'Semester V',
+      credits: 4,
+      hours: 45,
+      totalHours: 45,
+      course: {
+        id: cleanCode,
+        code: cleanCode,
+        title: title,
+        department: 'Computer Science & Engineering',
+        semester: 'Semester V',
+        credits: 4,
+        hours: { total: 45 },
+      },
+      objectives: [
+        `Understand the fundamental principles, theoretical models, and architecture of ${title}.`,
+        `Analyze core operational processes, algorithmic structures, and system design patterns.`,
+        `Evaluate computational efficiency, tradeoffs, and system boundaries in ${cleanCode}.`,
+        `Apply problem-solving strategies and hands-on methodologies to real-world domain scenarios.`,
+        `Design and implement scalable modular solutions aligning with professional engineering standards.`
+      ],
+      outcomes: [
+        `CO1: Explain basic principles and architectural foundations of ${title}.`,
+        `CO2: Formulate mathematical models and computational workflows for domain problems.`,
+        `CO3: Analyze design trade-offs, optimization techniques, and performance metrics.`,
+        `CO4: Synthesize multi-component solutions integrating core theoretical frameworks.`,
+        `CO5: Demonstrate technical proficiency through structured case studies and exercises.`
+      ],
+      textbooks: [
+        `Primary Author, "${title}: Fundamentals and Applications", 4th Edition, Academic Press, 2023.`,
+        `Secondary Author, "System Design & Analytical Principles of ${cleanCode}", Pearson Education, 2022.`
+      ],
+      references: [
+        `Reference Author, "Advanced Topics in ${title}", McGraw-Hill Higher Education, 2021.`
+      ],
+      units: [
+        {
+          unit_number: 1,
+          unitNumber: 1,
+          title: `Unit I: Principles & Theoretical Foundations of ${title}`,
+          hours: 10,
+          learningHours: 10,
+          topics: [
+            {
+              title: `Fundamental Concepts & Architecture of ${cleanCode}`,
+              name: `Fundamental Concepts & Architecture of ${cleanCode}`,
+              level: 'Introductory',
+              subtopics: [
+                `Historical Evolution & Scope of ${cleanCode}`,
+                `Core Structural Definitions & Theoretical Models`,
+                `System Classifications & Operational Boundaries`
+              ]
+            },
+            {
+              title: `Mathematical & Formal Frameworks`,
+              name: `Mathematical & Formal Frameworks`,
+              level: 'Intermediate',
+              subtopics: [
+                `Analytical Formulations & Vector Representations`,
+                `Boundary Conditions & Domain Constraints`,
+                `Error Metrics & Signal Interpretation`
+              ]
+            }
+          ]
+        },
+        {
+          unit_number: 2,
+          unitNumber: 2,
+          title: `Unit II: Data Structures & Execution Mechanics`,
+          hours: 10,
+          learningHours: 10,
+          topics: [
+            {
+              title: `Data Acquisition & Representation Schemes`,
+              name: `Data Acquisition & Representation Schemes`,
+              level: 'Intermediate',
+              subtopics: [
+                `Sensor Interfaces & Data Sampling Rules`,
+                `Transformation Pipelines & Normalization`,
+                `Spatial & Temporal Feature Encoding`
+              ]
+            },
+            {
+              title: `Algorithmic Workflows & Processing Pipeline`,
+              name: `Algorithmic Workflows & Processing Pipeline`,
+              level: 'Intermediate',
+              subtopics: [
+                `Stage 1 Pre-processing & Noise Reduction`,
+                `Feature Extraction & Dimensionality Reduction`,
+                `Classification Algorithms & Pattern Recognition`
+              ]
+            }
+          ]
+        },
+        {
+          unit_number: 3,
+          unitNumber: 3,
+          title: `Unit III: System Modeling & Optimization Strategy`,
+          hours: 9,
+          learningHours: 9,
+          topics: [
+            {
+              title: `Computational Modeling & Subsystem Integration`,
+              name: `Computational Modeling & Subsystem Integration`,
+              level: 'Intermediate',
+              subtopics: [
+                `State-Space Modeling & Dependency Graphs`,
+                `Resource Allocation & Queueing Management`,
+                `Interface Protocols & Communication Channels`
+              ]
+            },
+            {
+              title: `Optimization Algorithms & Tradeoff Analysis`,
+              name: `Optimization Algorithms & Tradeoff Analysis`,
+              level: 'Advanced',
+              subtopics: [
+                `Performance Benchmarking & Complexity Analysis`,
+                `Latency & Bandwidth Bottleneck Resolution`,
+                `Heuristic Search & Dynamic Programming Methods`
+              ]
+            }
+          ]
+        },
+        {
+          unit_number: 4,
+          unitNumber: 4,
+          title: `Unit IV: Advanced Applications & Domain Case Studies`,
+          hours: 8,
+          learningHours: 8,
+          topics: [
+            {
+              title: `Industrial & Real-world Implementation Patterns`,
+              name: `Industrial & Real-world Implementation Patterns`,
+              level: 'Advanced',
+              subtopics: [
+                `Enterprise Architecture Integration`,
+                `Fault-Tolerance & Resilience Mechanisms`,
+                `Security Protocols & Data Integrity Checks`
+              ]
+            },
+            {
+              title: `Domain Case Studies & Empirical Evaluation`,
+              name: `Domain Case Studies & Empirical Evaluation`,
+              level: 'Advanced',
+              subtopics: [
+                `Case Study 1: Large-scale Urban & Terrain Analysis`,
+                `Case Study 2: Real-Time Event Monitoring`,
+                `Comparative Performance Breakdown`
+              ]
+            }
+          ]
+        },
+        {
+          unit_number: 5,
+          unitNumber: 5,
+          title: `Unit V: Emerging Trends & Future Innovations`,
+          hours: 8,
+          learningHours: 8,
+          topics: [
+            {
+              title: `AI & Machine Learning Integration in ${title}`,
+              name: `AI & Machine Learning Integration in ${title}`,
+              level: 'Advanced',
+              subtopics: [
+                `Deep Neural Networks for Automated Analytics`,
+                `Hyperspectral & Multi-modal Data Fusion`,
+                `Generative Modeling & Synthetic Data Augmentation`
+              ]
+            },
+            {
+              title: `Future Paradigms & Research Directions`,
+              name: `Future Paradigms & Research Directions`,
+              level: 'Advanced',
+              subtopics: [
+                `Edge Computing & Cloud Orchestration`,
+                `Next-Gen Sensor Hardware & Quantum Sensing`,
+                `Standards, Ethics, & Environmental Impact`
+              ]
+            }
+          ]
+        }
+      ]
+    };
+  }
+
+  static transformSyllabusToCurriculumModel(syllabus: any): CourseDataModel {
+    if (!syllabus || !syllabus.units) {
+      return {
+        id: syllabus?.id || '',
+        courseName: syllabus?.course?.title || syllabus?.courseName || syllabus?.courseTitle || '',
+        code: syllabus?.course?.code || syllabus?.courseCode || syllabus?.code || '',
+        department: syllabus?.course?.department || syllabus?.department || '',
+        credits: Number(syllabus?.course?.credits || syllabus?.credits) || 0,
+        semester: syllabus?.course?.semester || syllabus?.semester || '',
+        hours: Number(syllabus?.course?.hours?.total || syllabus?.totalHours || syllabus?.hours) || 0,
+        hierarchy: [],
+        units: [],
+      };
+    }
+
+    const cCode = syllabus.courseCode || syllabus.code || syllabus.course?.code || 'COURSE';
+    const cTitle = syllabus.courseName || syllabus.courseTitle || syllabus.title || syllabus.course?.title || 'Course Syllabus';
+
+    const units = syllabus.units.map((unit: any, uIdx: number) => {
+      const uNum = unit.unit_number || unit.unitNumber || uIdx + 1;
+      const unitHours = Number(unit.hours || unit.learningHours) || 9;
+      return {
+        unitNumber: uNum,
+        title: unit.title || `Unit ${uNum}`,
+        hours: unitHours,
+        topics: (unit.topics || []).map((t: any, tIdx: number) => ({
+          id: `topic-${uNum}-${tIdx + 1}`,
+          name: typeof t === 'string' ? t : t.name || t.title || 'Topic',
+          subtopics: ((t.subtopics || []).map((s: any) => (typeof s === 'string' ? s : s.title || s.name || ''))),
+          level: (typeof t === 'object' && t.level) || 'Intermediate',
+          pedagogy: (tIdx % 2 === 0 ? 'Problem-Based Learning' : 'Interactive Discussion'),
+          hours: Math.max(2, Math.round(unitHours / Math.max(1, (unit.topics || []).length))),
+        })),
+      };
+    });
+
+    const hierarchy: CurriculumTopic[] = syllabus.units.map((unit: any, uIdx: number) => {
+      const uNum = unit.unit_number || unit.unitNumber || uIdx + 1;
+      const unitHours = Number(unit.hours || unit.learningHours) || 9;
+
+      const topics: CurriculumTopic[] = (unit.topics || []).map((topic: any, tIdx: number) => {
+        const subtopicList = topic.subtopics || [];
+        const subtopicNodes: CurriculumTopic[] = subtopicList.map((sub: any, sIdx: number) => {
+          const subTitle = typeof sub === 'string' ? sub : sub.title || sub.name || `Subtopic ${sIdx + 1}`;
+          return {
+            id: `concept-${uNum}-${tIdx + 1}-${sIdx + 1}`,
+            type: 'concept',
+            level: 'Subtopic',
+            hierarchyReason: `Detailed learning component supporting main topic ${typeof topic === 'string' ? topic : topic.name || topic.title}.`,
+            title: subTitle,
+            description: `Core subtopic under ${typeof topic === 'string' ? topic : topic.name || topic.title}`,
+            difficulty: 'Intermediate',
+            importance: 'Medium',
+            learningHours: Math.max(1, Math.round(unitHours / Math.max(1, subtopicList.length))),
+          };
+        });
+
+        const topicTitle = typeof topic === 'string' ? topic : topic.name || topic.title || `Topic ${tIdx + 1}`;
+
+        return {
+          id: `topic-${uNum}-${tIdx + 1}`,
+          type: 'topic',
+          level: (typeof topic === 'object' && topic.level) || 'Concept',
+          hierarchyReason: (typeof topic === 'object' && topic.hierarchyReason) || `Establishes core domain knowledge for ${topicTitle}.`,
+          title: topicTitle,
+          description: `Key topic covering ${topicTitle}`,
+          difficulty: 'Intermediate',
+          importance: 'High',
+          learningHours: Math.max(2, Math.round(unitHours / Math.max(1, (unit.topics || []).length))),
+          children: subtopicNodes,
+        };
+      });
+
+      return {
+        id: `unit-${uNum}`,
+        type: 'unit',
+        level: 'Unit',
+        unitNumber: uNum,
+        hierarchyReason: unit.hierarchyReason || `Curriculum unit establishing module objectives.`,
+        title: unit.title || `Unit ${uNum}`,
+        description: `Comprehensive module covering ${unit.title || `Unit ${uNum}`}`,
+        difficulty: 'Intermediate',
+        importance: 'High',
+        learningHours: unitHours,
+        children: topics,
+      };
+    });
+
+    return {
+      id: syllabus.id || cCode,
+      courseName: cTitle,
+      code: cCode,
+      department: syllabus.department || syllabus.course?.department || 'Computer Science & Engineering',
+      credits: Number(syllabus.credits || syllabus.course?.credits) || 4,
+      semester: syllabus.semester || syllabus.course?.semester || 'Semester V',
+      hours: Number(syllabus.totalHours || syllabus.hours?.total || syllabus.hours) || 45,
+      hierarchy,
+      units,
+    };
+  }
+
+  static async getCurriculumData(): Promise<CourseDataModel> {
+    return this.fetchCurriculumData();
+  }
+
   static async fetchCurriculumData(): Promise<CourseDataModel> {
     await new Promise((resolve) => setTimeout(resolve, 200));
 
@@ -61,6 +371,7 @@ export class CurriculumService {
         semester: syllabus?.course?.semester || '',
         hours: Number(syllabus?.course?.hours?.total) || 0,
         hierarchy: [],
+        units: [],
       };
     }
 
@@ -84,7 +395,7 @@ export class CurriculumService {
           };
         });
 
-        const topicBloom = (tIdx % 2 === 0 ? 'Analyze' : 'Apply');
+        const topicBloom = tIdx % 2 === 0 ? 'Analyze' : 'Apply';
 
         return {
           id: `topic-${uNum}-${tIdx + 1}`,
@@ -104,7 +415,7 @@ export class CurriculumService {
               method: 'Problem-Based Learning',
               bloomLevel: topicBloom,
               reason: 'This topic involves complex real-world application, so working through case scenarios solidifies understanding faster than passive lectures.',
-              confidence: 95
+              confidence: 95,
             },
             {
               rank: 2,
@@ -112,7 +423,7 @@ export class CurriculumService {
               method: 'Worked Examples & Live Coding',
               bloomLevel: 'Apply',
               reason: 'Step-by-step problem execution helps learners construct operational mental models.',
-              confidence: 91
+              confidence: 91,
             },
             {
               rank: 3,
@@ -120,8 +431,8 @@ export class CurriculumService {
               method: 'Gamified Retrieval Practice',
               bloomLevel: 'Understand',
               reason: 'Reinforces key definitions and architectural concepts through active recall.',
-              confidence: 86
-            }
+              confidence: 86,
+            },
           ],
           children: subtopicNodes,
         };
@@ -164,7 +475,6 @@ export class CurriculumService {
     const targetUnit = unitFilter.trim().toLowerCase();
 
     return topics.reduce<CurriculumTopic[]>((acc, topic) => {
-      // Unit level filter check
       if (topic.type === 'unit' && targetUnit !== 'all') {
         const uTitle = topic.title.toLowerCase();
         const matchesUnit =
@@ -205,9 +515,8 @@ export class CurriculumService {
 
   static async fetchCourseFromPostgres(courseId: string): Promise<CourseDataModel | null> {
     try {
-      const res = await fetch(`http://localhost:8000/api/courses/${encodeURIComponent(courseId)}`);
-      if (res.ok) {
-        const data = await res.json();
+      const data = await curriculumApi.fetchCourseFromPostgres(courseId);
+      if (data) {
         return {
           id: data.id || courseId,
           courseName: data.courseName || data.courseTitle || data.title || courseId,
@@ -231,17 +540,17 @@ export class CurriculumService {
               importance: 'High',
               learningHours: u.learningHours || 9,
               children: (u.topics || []).map((t: any, tIdx: number) => ({
-                id: t.id || `t-${uNum}-${tIdx+1}`,
+                id: t.id || `t-${uNum}-${tIdx + 1}`,
                 type: 'topic',
                 level: 'Concept',
                 title: typeof t === 'string' ? t : t.title,
                 description: `Topic covering ${typeof t === 'string' ? t : t.title}`,
                 difficulty: 'Intermediate',
                 importance: 'High',
-                subtopics: t.subtopics || []
-              }))
+                subtopics: t.subtopics || [],
+              })),
             };
-          })
+          }),
         };
       }
     } catch (err) {
@@ -257,18 +566,10 @@ export class CurriculumService {
     topics: string[];
   }): Promise<any> {
     try {
-      const res = await fetch('http://localhost:8000/api/generate-hierarchy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) {
-        return await res.json();
-      }
+      return await curriculumApi.generateHierarchy(payload);
     } catch (err) {
       console.warn('Error generating hierarchy with OpenAI:', err);
     }
     return null;
   }
 }
-

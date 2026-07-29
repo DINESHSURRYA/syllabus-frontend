@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -20,9 +20,12 @@ import {
   Tag,
   StopCircle,
   Loader2,
+  UserCheck,
+  AlertCircle,
+  Sparkles,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useEvaluatorStore } from '@/lib/evaluator-store';
+import { useEvaluatorStore } from '@/stores';
 import { submitAnswer, stopInterview } from '@/lib/evaluator-api';
 import {
   EvaluatorInterviewerTile,
@@ -118,6 +121,7 @@ export default function InterviewSessionPage() {
     isMicRecording,
     questionTimerSeconds,
     isTimerRunning,
+    selectedCandidateAssessment,
     applySubmitResponseToSession,
     setCandidateResponseInput,
     setAudioPlaying,
@@ -172,22 +176,55 @@ export default function InterviewSessionPage() {
     }
   }, []);
 
-  // ── Sync audio element to current turn's audio_url ──────
+  // ── Fallback Browser Speech Synthesis ────────────────────
+  const speakText = useCallback((text: string) => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.onstart = () => setAudioPlaying(true);
+      utterance.onend = () => setAudioPlaying(false);
+      utterance.onerror = () => setAudioPlaying(false);
+      window.speechSynthesis.speak(utterance);
+    } else {
+      setAudioPlaying(false);
+    }
+  }, [setAudioPlaying]);
+
+  // ── Sync & Auto-play question audio out loud ──────────────
   useEffect(() => {
     if (!activeSession) return;
     const turn = activeSession.turns[currentTurnIndex];
-    if (!turn?.audioUrl) return;
+    if (!turn?.questionStem) return;
 
     if (audioRef.current) {
       audioRef.current.pause();
+      audioRef.current = null;
     }
-    const audio = new Audio(turn.audioUrl);
-    audioRef.current = audio;
-    setAudioPlaying(false);
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
 
-    audio.onended = () => setAudioPlaying(false);
-    audio.onerror = () => setAudioPlaying(false);
-  }, [currentTurnIndex, activeSession?.threadId, setAudioPlaying]);
+    setAudioPlaying(true);
+
+    if (turn.audioUrl) {
+      const audio = new Audio(turn.audioUrl);
+      audioRef.current = audio;
+
+      audio.onended = () => setAudioPlaying(false);
+      audio.onerror = () => {
+        speakText(turn.questionStem);
+      };
+
+      audio.play().catch((err) => {
+        console.warn('Audio play error, falling back to speech synthesis:', err);
+        speakText(turn.questionStem);
+      });
+    } else {
+      speakText(turn.questionStem);
+    }
+  }, [currentTurnIndex, activeSession?.threadId, activeSession?.turns, setAudioPlaying, speakText]);
 
   // ── No active session guard ──────────────────────────────
   if (!activeSession) {
@@ -213,14 +250,11 @@ export default function InterviewSessionPage() {
     );
   }
 
-  const currentTurn = activeSession.turns[currentTurnIndex];
+  const currentTurn = activeSession.turns[currentTurnIndex] || activeSession.turns[0];
   const totalQuestionsAsked = activeSession.totalQuestionsAsked;
   const totalTopics = activeSession.totalTopics;
-
-  // Previous turn (to show its evaluation under the new question)
   const prevTurn = currentTurnIndex > 0 ? activeSession.turns[currentTurnIndex - 1] : null;
 
-  // ── Format timer ─────────────────────────────────────────
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60).toString().padStart(2, '0');
     const s = (secs % 60).toString().padStart(2, '0');
@@ -229,46 +263,111 @@ export default function InterviewSessionPage() {
 
   // ── Audio controls ───────────────────────────────────────
   const handleToggleAudio = () => {
-    if (!audioRef.current) return;
-    if (isAudioPlaying) {
-      audioRef.current.pause();
-      setAudioPlaying(false);
-    } else {
-      audioRef.current.play().catch(console.error);
-      setAudioPlaying(true);
+    if (audioRef.current) {
+      if (isAudioPlaying) {
+        audioRef.current.pause();
+        setAudioPlaying(false);
+      } else {
+        audioRef.current.play().then(() => setAudioPlaying(true)).catch(() => {
+          if (currentTurn?.questionStem) speakText(currentTurn.questionStem);
+        });
+      }
+    } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+        setAudioPlaying(false);
+      } else if (currentTurn?.questionStem) {
+        speakText(currentTurn.questionStem);
+      }
     }
   };
 
   const handleReplayAudio = () => {
-    if (!audioRef.current) return;
-    audioRef.current.currentTime = 0;
-    audioRef.current.play().catch(console.error);
-    setAudioPlaying(true);
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().then(() => setAudioPlaying(true)).catch(() => {
+        if (currentTurn?.questionStem) speakText(currentTurn.questionStem);
+      });
+    } else if (currentTurn?.questionStem) {
+      speakText(currentTurn.questionStem);
+    }
   };
 
-  // ── Mic toggle ───────────────────────────────────────────
-  const handleMicToggle = () => {
-    if (!recognitionRef.current) {
-      alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+  // ── Speech Recognition Mic toggle ─────────────────────────
+  const handleMicToggle = async () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setSubmitError('Speech recognition is not supported in this browser. Please use Google Chrome or Microsoft Edge.');
       return;
     }
-    if (!isMicRecording) {
-      const currentText = candidateResponseInput ? candidateResponseInput + ' ' : '';
-      recognitionRef.current.onresult = (event: any) => {
-        let final = '';
-        let interim = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          if (event.results[i].isFinal) final += event.results[i][0].transcript;
-          else interim += event.results[i][0].transcript;
+
+    if (isMicRecording) {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (e) {}
+      }
+      setMicRecording(false);
+      return;
+    }
+
+    setSubmitError(null);
+
+    // Request getUserMedia permission first to trigger browser prompt if not already granted
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    } catch (err: any) {
+      console.error('Microphone permission error:', err);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setSubmitError('Microphone permission denied. Click the lock/microphone icon next to http://localhost:3000 in your browser address bar and set Microphone to "Allow".');
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        setSubmitError('No microphone input device found. Please check your recording device connection.');
+      } else {
+        setSubmitError(`Microphone access notice: ${err.message || err.name}`);
+      }
+      setMicRecording(false);
+      return;
+    }
+
+    try {
+      const rec = new SpeechRecognition();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = 'en-US';
+
+      const baseText = candidateResponseInput ? candidateResponseInput.trim() + ' ' : '';
+
+      rec.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
         }
-        setCandidateResponseInput(currentText + final + interim);
+        setCandidateResponseInput(baseText + transcript);
       };
-      recognitionRef.current.onerror = () => setMicRecording(false);
-      recognitionRef.current.onend = () => setMicRecording(false);
-      recognitionRef.current.start();
+
+      rec.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          setSubmitError('Speech recognition permission denied. Please allow microphone access in your browser settings.');
+        } else if (event.error !== 'no-speech') {
+          setSubmitError(`Speech recognition notice: ${event.error}`);
+        }
+        if (event.error !== 'no-speech') {
+          setMicRecording(false);
+        }
+      };
+
+      rec.onend = () => {
+        setMicRecording(false);
+      };
+
+      recognitionRef.current = rec;
+      rec.start();
       setMicRecording(true);
-    } else {
-      recognitionRef.current.stop();
+    } catch (err: any) {
+      console.error('Failed to start speech recognition:', err);
+      setSubmitError(`Failed to start speech recognition: ${err.message || err}`);
       setMicRecording(false);
     }
   };
@@ -290,8 +389,9 @@ export default function InterviewSessionPage() {
     const timeTaken = questionTimerSeconds;
 
     try {
+      if (!activeThreadId) return;
       const res = await submitAnswer(activeThreadId, candidateResponseInput.trim(), timeTaken);
-      applySubmitResponseToSession(candidateResponseInput.trim(), timeTaken, res);
+      applySubmitResponseToSession(res);
       resetQuestionTimer();
     } catch (err: any) {
       setSubmitError(err?.message || 'Failed to submit answer. Please check your connection.');
@@ -313,7 +413,7 @@ export default function InterviewSessionPage() {
 
   // ── Stop interview ───────────────────────────────────────
   const handleStopInterview = async () => {
-    if (isStopping || isSubmitting) return;
+    if (isStopping || isSubmitting || !activeThreadId) return;
     if (!confirm('Stop the interview now? A report will be generated from your answers so far.')) return;
 
     setIsStopping(true);
@@ -321,7 +421,7 @@ export default function InterviewSessionPage() {
 
     try {
       const res = await stopInterview(activeThreadId);
-      setStopReport(res.report, 'manual_stop');
+      setStopReport(res.report || null);
       router.push(`/evaluator/report/${activeSession.threadId}`);
     } catch (err: any) {
       setSubmitError(err?.message || 'Failed to stop the interview. Please try again.');
@@ -379,6 +479,53 @@ export default function InterviewSessionPage() {
           </button>
         </div>
       </div>
+
+      {/* ── Candidate Baseline & Diagnostic Focus Banner ── */}
+      {selectedCandidateAssessment && (
+        <div className="p-4 rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950/60 via-slate-900 to-indigo-950/60 shadow-lg space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-500/20 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="h-8 w-8 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center justify-center font-bold shrink-0">
+                <UserCheck size={16} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-black text-white">{selectedCandidateAssessment.candidate_name}</h3>
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                    Code: {selectedCandidateAssessment.assessment_code}
+                  </span>
+                </div>
+                <p className="text-[11px] font-mono text-slate-300">
+                  Submitted: {new Date(selectedCandidateAssessment.submitted_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })} &nbsp;•&nbsp; {selectedCandidateAssessment.assessment_name}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 self-start sm:self-auto">
+              <div className="text-right">
+                <span className="text-[10px] font-mono text-slate-400 uppercase block">Baseline Score</span>
+                <span className="text-xs font-mono font-black text-emerald-400">
+                  {selectedCandidateAssessment.score_percentage}% Baseline
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Weak Topics Diagnostic Focus */}
+          {selectedCandidateAssessment.weak_topics && selectedCandidateAssessment.weak_topics.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+              <span className="text-amber-400 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1">
+                <AlertCircle size={12} /> Diagnostic Speech Focus (Weak Topics):
+              </span>
+              {selectedCandidateAssessment.weak_topics.map((wt) => (
+                <span key={wt} className="px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 font-bold text-[11px]">
+                  {wt}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Progress Bar ───────────────────────────────── */}
       <EvaluatorProgressBar

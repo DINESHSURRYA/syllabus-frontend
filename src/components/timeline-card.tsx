@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/timeline-card.css';
 import { motion } from 'framer-motion';
 import { Clock3, BookOpen } from 'lucide-react';
 
@@ -88,21 +88,33 @@ export function TimelineCard({ unit, topic, hours, sessions, subtopics }: Timeli
             </div>
 
             {/* Bundled Topics Covered */}
-            <div className="space-y-1.5">
-              <p className="text-[11px] font-mono font-bold uppercase dark:text-slate-400 text-slate-500 tracking-wider flex items-center gap-1.5">
-                <BookOpen size={13} className="text-indigo-400" /> Topics Covered in this 1-Hour Slot:
-              </p>
-              <div className="flex flex-wrap gap-1.5 pt-0.5">
-                {session.topics_covered.map((t, tIdx) => (
-                  <span
-                    key={tIdx}
-                    className="rounded-xl border dark:border-white/10 border-slate-300 dark:bg-slate-900 bg-white px-3 py-1.5 text-xs font-semibold dark:text-slate-200 text-slate-800 shadow-2xs"
-                  >
-                    {t}
-                  </span>
-                ))}
-              </div>
-            </div>
+            {(() => {
+              const mainTopicLower = (topic || '').trim().toLowerCase();
+              const cleanCovered = (session.topics_covered || [])
+                .map(t => (t || '').trim())
+                .filter((t, idx, self) => t.length > 0 && self.findIndex(s => s.toLowerCase() === t.toLowerCase()) === idx)
+                .filter(t => t.toLowerCase() !== mainTopicLower);
+
+              if (cleanCovered.length === 0) return null;
+
+              return (
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-mono font-bold uppercase dark:text-slate-400 text-slate-500 tracking-wider flex items-center gap-1.5">
+                    <BookOpen size={13} className="text-indigo-400" /> Topics Covered in this 1-Hour Slot:
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {cleanCovered.map((t, tIdx) => (
+                      <span
+                        key={tIdx}
+                        className="rounded-xl border dark:border-white/10 border-slate-300 dark:bg-slate-900 bg-white px-3 py-1.5 text-xs font-semibold dark:text-slate-200 text-slate-800 shadow-2xs"
+                      >
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Metadata & Rationale */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">

@@ -1,10 +1,10 @@
 "use client";
-
+import './styles/extraction-notification.css';
 import React from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, AlertCircle, X, ArrowRight, Loader2, Sparkles } from 'lucide-react';
-import { useSyllabusStore } from '@/lib/store';
+import { useSyllabusStore } from '@/stores';
 
 export function ExtractionNotificationPopup() {
   const { activeNotification, clearNotification, isBackgroundProcessing } = useSyllabusStore();

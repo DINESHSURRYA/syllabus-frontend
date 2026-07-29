@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -58,8 +58,7 @@ import {
 } from '@/lib/api-client';
 import { VerificationSuccessModal } from '@/components/syllabus/verification-success-modal';
 import { CoPoMappingModal } from '@/components/syllabus/copo-mapping-modal';
-import { useGuideStore } from '@/lib/guide-store';
-import { useSyllabusStore, emptySyllabus } from '@/lib/store';
+import { useSyllabusStore, emptySyllabus, useGuideStore } from '@/stores';
 
 
 function SyllabusRepositoryContent() {

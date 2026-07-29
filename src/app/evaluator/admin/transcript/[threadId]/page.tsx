@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -17,7 +17,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useEvaluatorStore } from '@/lib/evaluator-store';
+import { useEvaluatorStore } from '@/stores';
 import {
   EvaluatorBackButton,
   EvaluatorEmptyState,
@@ -33,7 +33,7 @@ export default function InterviewTranscriptPage() {
   const threadId = (params?.threadId as string) || '';
   const { sessions } = useEvaluatorStore();
 
-  const session = sessions[threadId];
+  const session = (sessions || []).find((s: any) => s.threadId === threadId);
   const [expandedTurn, setExpandedTurn] = useState<number | null>(1);
 
   if (!session) {
@@ -136,7 +136,7 @@ export default function InterviewTranscriptPage() {
           />
         ) : (
           <div className="space-y-6 relative before:absolute before:inset-0 before:left-6 before:w-0.5 before:bg-[var(--border-subtle)] before:z-0">
-            {session.turns.map((turn) => {
+            {(session.turns || []).map((turn: any) => {
               const isOpen = expandedTurn === turn.turnNumber;
               const passed = (turn.evaluationScore ?? 0) >= 0.5;
 
@@ -165,7 +165,7 @@ export default function InterviewTranscriptPage() {
                     {turn.targetConcepts?.length > 0 && (
                       <div className="flex flex-wrap gap-1.5 pt-1">
                         <Tag size={10} className="text-[var(--text-muted)] mt-1 shrink-0" />
-                        {turn.targetConcepts.map((c) => (
+                        {turn.targetConcepts.map((c: any) => (
                           <span key={c} className="px-2.5 py-0.5 rounded-full border border-indigo-500/20 bg-indigo-500/8 text-indigo-300 text-[10px] font-mono font-bold">
                             {c}
                           </span>

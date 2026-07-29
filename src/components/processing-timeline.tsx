@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/processing-timeline.css';
 import { motion } from 'framer-motion';
 import { AlertTriangle, CheckCircle2, RefreshCw, Sparkles, XCircle } from 'lucide-react';
 import { STAGE_2_STATUS_MESSAGES } from '@/lib/constants';

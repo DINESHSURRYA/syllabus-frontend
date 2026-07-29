@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/verification-success-modal.css';
 import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 

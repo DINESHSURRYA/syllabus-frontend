@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/guide-assistant-widget.css';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -27,7 +27,7 @@ import {
   VolumeX,
   Compass
 } from 'lucide-react';
-import { useGuideStore, WORKFLOW_STEPS, WorkflowStepId } from '@/lib/guide-store';
+import { useGuideStore, WORKFLOW_STEPS, WorkflowStepId } from '@/stores';
 import { Button } from '@/components/ui/button';
 
 interface PersonaConfig {

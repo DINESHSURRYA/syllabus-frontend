@@ -1,827 +1,599 @@
 "use client";
-
-import { useState, useEffect, useMemo } from 'react';
+import './styles/page.css';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Sparkles,
-  CalendarDays,
-  ArrowRight,
-  ChevronDown,
-  BookOpen,
-  Clock,
-  Layers,
-  RefreshCw,
-  Check,
-  Search,
-  Filter
+  Sparkles, CalendarDays, Clock, Layers, RefreshCw,
+  Check, Search, ChevronDown, BookOpen, BarChart3,
+  ChevronRight, ChevronDown as CollapseIcon, FlaskConical,
+  AlertCircle, CheckCircle2, Database, Zap
 } from 'lucide-react';
-import dynamic from 'next/dynamic';
 import { AppShell } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useSyllabusStore, normalizeSyllabusToStoreData, UnitItem } from '@/lib/store';
+import { client, API, syllabusApi, curriculumApi, timelineApi } from '@/lib/api';
 
-const TimelineCard = dynamic(
-  () => import('@/components/timeline-card').then((mod) => mod.TimelineCard),
-  {
-    loading: () => <div className="h-32 rounded-2xl border border-slate-800 bg-slate-900/50 animate-pulse p-4 text-xs font-mono text-slate-500">Loading timeline card...</div>,
-    ssr: false,
-  }
-);
-
-// ─────────────────────────────────────────────
-// Types & Keyword Rules
-// ─────────────────────────────────────────────
-interface SavedSyllabus {
-  id: string;
-  code: string;
-  title: string;
-  updatedAt?: string;
+interface SavedSyllabus { id: string; code: string; title: string; updatedAt?: string; }
+interface HourlySlot {
+  hour: number;
+  topic: string;
+  topics_covered?: string[];
+  bloom_level?: string;
+}
+interface TimelineUnit {
+  unit_id?: string; unitId?: string;
+  unit_number?: number; unitNumber?: number;
+  unit_title?: string; unitTitle?: string;
+  total_unit_hours?: number; totalHours?: number; allocatedHours?: number;
+  hourly_schedule?: HourlySlot[]; hourlySchedule?: HourlySlot[];
+  topics?: any[]; topicsCount?: number; avgHoursPerTopic?: number;
+  teachingHours?: number; revisionHours?: number; assessmentHours?: number;
+}
+interface TimelineData {
+  syllabusId?: string; courseCode?: string; course_code?: string;
+  courseTitle?: string; course_title?: string;
+  targetHours?: number; total_hours?: number; totalAllocatedHours?: number; totalTeachingWeeks?: number;
+  totalUnits?: number; totalTopics?: number; avgHoursPerUnit?: number; avgHoursPerTopic?: number;
+  units?: TimelineUnit[]; labTimeline?: any[]; generatedAt?: string;
 }
 
-const PEDAGOGY_POOL = ['Worked Example', 'Case Study', 'Hands-on Lab', 'Visualisation', 'Guided Practice', 'Think-Pair-Share', 'Socratic Dialogue'];
-const BLOOM_POOL = ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'];
 const HOURS_OPTIONS = ['45 Hours', '60 Hours', '75 Hours', '90 Hours', 'Custom'];
+const BLOOM_COLORS: Record<string, string> = {
+  'Remember': 'bg-slate-500/20 text-slate-300 border-slate-500/30',
+  'Understand': 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  'Apply': 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+  'Analyze': 'bg-violet-500/20 text-violet-300 border-violet-500/30',
+  'Evaluate': 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+  'Create': 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+};
 
-const HIGH_WEIGHT_KEYWORDS = [
-  'SCHEDULING', 'DEADLOCK', 'PAGE REPLACEMENT', 'CRITICAL-SECTION', 'SYNCHRONIZATION',
-  'BANKER', 'ALLOCATION METHODS', 'INODE', 'VIRTUALIZATION', 'HYPERVISOR',
-  'INTER-PROCESS', 'MEMORY MANAGEMENT', 'FILE SYSTEM IMPLEMENTATION', 'VIRTUAL MEMORY',
-  'DISK SCHEDULING', 'SYSTEM CALLS', 'STRUCTURING METHODS', 'ART', 'SEMAPHORE'
-];
-
-const LOW_WEIGHT_KEYWORDS = [
-  'OVERVIEW', 'INTRODUCTION', 'EVOLUTION', 'INTERFACE', 'HISTORY', 'OBJECTIVES',
-  'FUNCTIONS', 'PROGRAMS', 'CONCEPT', 'TYPES OF', 'BENEFITS', 'ELEMENTS'
-];
-
-function calculateTopicWeight(title: string, subCount: number, bloomLevel?: string): number {
-  const tUpper = (title || '').toUpperCase();
-  let weight = 1.0;
-
-  if (subCount > 1) {
-    weight += (subCount - 1) * 0.3;
-  }
-
-  if (HIGH_WEIGHT_KEYWORDS.some((kw) => tUpper.includes(kw))) {
-    weight *= 1.8;
-  } else if (LOW_WEIGHT_KEYWORDS.some((kw) => tUpper.includes(kw))) {
-    weight *= 0.65;
-  }
-
-  const bUpper = (bloomLevel || '').toUpperCase();
-  if (bUpper.includes('EVALUATE') || bUpper.includes('CREATE')) {
-    weight *= 1.4;
-  } else if (bUpper.includes('ANALYZE') || bUpper.includes('APPLY')) {
-    weight *= 1.2;
-  } else if (bUpper.includes('REMEMBER')) {
-    weight *= 0.8;
-  }
-
-  return Math.max(0.4, weight);
-}
-
-function buildTimelineData(
-  units: UnitItem[],
-  selectedUnits: Record<number, boolean>,
-  generatedTimelineUnits?: any[],
-  generatedTimelineLectures?: any[]
-) {
-  return units
-    .filter((_, idx) => selectedUnits[idx] !== false)
-    .map((unit, uIdx) => {
-      const unitNumberStr = `Unit ${unit.unit_number || uIdx + 1}`;
-      const unitTitleStr = unit.title || `Unit ${uIdx + 1}`;
-      const unitTotalHours = parseFloat(unit.hours) || 9.0;
-      const unitIdStr = (unit as any).id || unitTitleStr;
-
-      // 1. Check if generated 1-hour unit plan exists from API/DB
-      const matchedUnitPlan = (generatedTimelineUnits || []).find(
-        (u: any) =>
-          u.unit_id === unitIdStr ||
-          u.unit_name === unitTitleStr ||
-          u.unit_id === unitNumberStr ||
-          (u.unit_name && u.unit_name.toLowerCase() === unitTitleStr.toLowerCase())
-      );
-
-      if (matchedUnitPlan && Array.isArray(matchedUnitPlan.hourly_sessions) && matchedUnitPlan.hourly_sessions.length > 0) {
-        return {
-          unit: unitNumberStr,
-          topic: matchedUnitPlan.unit_name || unitTitleStr,
-          hours: String(matchedUnitPlan.total_allocated_hours || unitTotalHours),
-          sessions: matchedUnitPlan.hourly_sessions.map((s: any) => ({
-            hour_number: s.hour_number,
-            duration: "60 mins",
-            topics_covered: Array.isArray(s.topics_covered) ? s.topics_covered : [s.topic || "Core Topic"],
-            bloom_level: s.bloom_level || "Understand",
-            pedagogy: s.pedagogy || "Worked Example",
-            reasoning: s.reasoning || ""
-          }))
-        };
-      }
-
-      // 2. Fallback: generate clean 1-hour session slots for this unit
-      const targetHoursInt = Math.max(1, Math.round(unitTotalHours));
-      const topics = unit.topics || [];
-      const sessionList: Array<{
-        hour_number: number;
-        duration: string;
-        topics_covered: string[];
-        bloom_level: string;
-        pedagogy: string;
-        reasoning?: string;
-      }> = [];
-
-      const allTopicTitles: string[] = [];
-      topics.forEach((t) => {
-        const topicName = t.name || 'Core Topic';
-        const rawSubs = Array.isArray(t.subtopics) ? t.subtopics : [];
-        if (rawSubs.length > 0) {
-          rawSubs.forEach((sub) => {
-            const titleStr = typeof sub === 'string' ? sub : (sub as any).title || (sub as any).name || topicName;
-            allTopicTitles.push(titleStr);
-          });
-        } else {
-          allTopicTitles.push(topicName);
-        }
-      });
-
-      if (allTopicTitles.length === 0) {
-        allTopicTitles.push(`${unitTitleStr} Core Concepts`);
-      }
-
-      const itemsPerSlot = Math.max(1, Math.floor(allTopicTitles.length / targetHoursInt));
-
-      for (let h = 1; h <= targetHoursInt; h++) {
-        let slotTopics: string[] = [];
-        if (h === targetHoursInt) {
-          slotTopics = allTopicTitles.slice((h - 1) * itemsPerSlot);
-        } else {
-          slotTopics = allTopicTitles.slice((h - 1) * itemsPerSlot, h * itemsPerSlot);
-        }
-
-        if (slotTopics.length === 0 && allTopicTitles.length > 0) {
-          slotTopics = [allTopicTitles[(h - 1) % allTopicTitles.length]];
-        }
-
-        const pedagogy = PEDAGOGY_POOL[(h - 1) % PEDAGOGY_POOL.length];
-        const bloom = BLOOM_POOL[(h - 1) % BLOOM_POOL.length];
-        const reasoning = slotTopics.length === 1
-          ? `${slotTopics[0]} requires a dedicated 60-minute session due to high conceptual weightage.`
-          : `Combining ${slotTopics.length} related subtopics into a 60-minute session creates a solid learning block.`;
-
-        sessionList.push({
-          hour_number: h,
-          duration: '60 mins',
-          topics_covered: slotTopics,
-          bloom_level: bloom,
-          pedagogy,
-          reasoning,
-        });
-      }
-
-      return {
-        unit: unitNumberStr,
-        topic: unitTitleStr,
-        hours: String(targetHoursInt),
-        sessions: sessionList,
-      };
-    });
-}
-
-// ─────────────────────────────────────────────
-// Main Page
-// ─────────────────────────────────────────────
 export default function TimelinePage() {
-  const { syllabus, setSyllabus } = useSyllabusStore();
-
   const [savedSyllabi, setSavedSyllabi] = useState<SavedSyllabus[]>([]);
   const [selectedSyllabusId, setSelectedSyllabusId] = useState('');
-  const [isFetchingSyllabi, setIsFetchingSyllabi] = useState(true);
-  const [isLoadingSyllabus, setIsLoadingSyllabus] = useState(false);
-  const [isGeneratingTimeline, setIsGeneratingTimeline] = useState(false);
-  const [isTimelineAllocated, setIsTimelineAllocated] = useState<boolean>(false);
-  const [generatedTimelineUnits, setGeneratedTimelineUnits] = useState<any[]>([]);
-  const [generatedTimelineLectures, setGeneratedTimelineLectures] = useState<any[]>([]);
-  const [selectedUnits, setSelectedUnits] = useState<Record<number, boolean>>({});
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const [selectedHours, setSelectedHours] = useState('45 Hours');
-  const [syllabusSearch, setSyllabusSearch] = useState('');
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [activeUnitFilter, setActiveUnitFilter] = useState<string>('all');
+  const [customHoursInput, setCustomHoursInput] = useState('');
+  const [selectedUnitFilter, setSelectedUnitFilter] = useState<'ALL' | '1' | '2' | '3' | '4' | '5'>('ALL');
+  const [hasSyllabusHours, setHasSyllabusHours] = useState(false);
+  const [syllabusTotalHours, setSyllabusTotalHours] = useState<number | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [timelineData, setTimelineData] = useState<TimelineData | null>(null);
+  const [isTimelineAllocated, setIsTimelineAllocated] = useState(false);
+  const [expandedUnits, setExpandedUnits] = useState<Record<string, boolean>>({});
+  const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
 
-  const units = syllabus?.units || [];
-
-  // ── Check PostgreSQL database for cached allocated timeline plan ──
-  useEffect(() => {
-    if (!selectedSyllabusId) return;
-    const checkDbTimeline = async () => {
-      try {
-        const res = await fetch(`http://localhost:8000/api/timeline/syllabus/${encodeURIComponent(selectedSyllabusId)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.isTimelineAllocated && data.timelinePlan) {
-            setIsTimelineAllocated(true);
-            if (Array.isArray(data.timelinePlan.units) && data.timelinePlan.units.length > 0) {
-              setGeneratedTimelineUnits(data.timelinePlan.units);
-            }
-            if (Array.isArray(data.timelinePlan.lectures)) {
-              setGeneratedTimelineLectures(data.timelinePlan.lectures);
-            }
-            return;
-          }
-        }
-      } catch (err) {
-        console.warn('DB timeline fetch notice:', err);
-      }
-      setIsTimelineAllocated(false);
-    };
-    checkDbTimeline();
-  }, [selectedSyllabusId]);
-
-  // ── Fetch saved syllabi list from backend ──
-  useEffect(() => {
-    setIsFetchingSyllabi(true);
-    const tryFetch = async () => {
-      try {
-        let res = await fetch('http://localhost:8000/api/syllabus/saved');
-        if (!res.ok) res = await fetch('http://localhost:8000/api/syllabus');
-
-        if (res.ok) {
-          const raw = await res.json();
-          const list = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : [];
-          const seen = new Set<string>();
-          const formatted: SavedSyllabus[] = [];
-
-          list.forEach((c: any) => {
-            const courseInfo = c?.course && typeof c.course === 'object' ? c.course : c;
-            const code = (c.courseCode || c.code || courseInfo?.code || courseInfo?.courseCode || '').trim();
-            const title = (c.courseName || c.courseTitle || c.title || courseInfo?.title || courseInfo?.courseName || '').trim();
-            const id = c.id || c.syllabusId || courseInfo?.id || code;
-            if (code && title && id && !seen.has(id)) {
-              seen.add(id);
-              formatted.push({ id, code, title, updatedAt: c.updatedAt || c.createdAt || c.timestamp });
-            }
-          });
-
-          setSavedSyllabi(formatted);
-
-          if (formatted.length > 0) {
-            const currentId = selectedSyllabusId || syllabus?.id || syllabus?.course?.code;
-            const found = currentId ? formatted.find((f) => f.id === currentId || f.code === currentId) : null;
-            if (found) {
-              setSelectedSyllabusId(found.id);
-            } else {
-              setSelectedSyllabusId(formatted[0].id);
-            }
-          } else {
-            setSelectedSyllabusId('');
-          }
-        }
-      } catch (err) {
-        console.warn('Could not fetch saved syllabi:', err);
-      } finally {
-        setIsFetchingSyllabi(false);
-      }
-    };
-    tryFetch();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ── Load full syllabus data when selection changes ──
-  useEffect(() => {
-    if (!selectedSyllabusId) return;
-
-    const currentId = syllabus?.id || syllabus?.course?.code;
-    if ((currentId === selectedSyllabusId) && units.length > 0) {
-      setIsLoadingSyllabus(false);
-      return;
-    }
-
-    setIsLoadingSyllabus(true);
-    const loadSyllabus = async () => {
-      try {
-        let res = await fetch(`http://localhost:8000/api/syllabus/${encodeURIComponent(selectedSyllabusId)}`);
-        if (!res.ok) {
-          res = await fetch(`http://localhost:8000/api/courses/${encodeURIComponent(selectedSyllabusId)}`);
-        }
-        if (res.ok) {
-          const raw = await res.json();
-          const normalized = normalizeSyllabusToStoreData(raw);
-          setSyllabus(normalized);
-        }
-      } catch (err) {
-        console.warn('Could not load syllabus data:', err);
-      } finally {
-        setIsLoadingSyllabus(false);
-      }
-    };
-    loadSyllabus();
-  }, [selectedSyllabusId]);
-
-  // ── Reset unit selection when syllabus changes ──
-  useEffect(() => {
-    const init: Record<number, boolean> = {};
-    units.forEach((_, idx) => { init[idx] = true; });
-    setSelectedUnits(init);
-  }, [units.length]);
-
-  const toggleUnit = (idx: number) => {
-    setSelectedUnits((prev) => ({ ...prev, [idx]: !prev[idx] }));
-  };
-
-  const handleGenerateTimeline = async () => {
-    setIsGeneratingTimeline(true);
-    try {
-      const courseId = selectedSyllabusId || syllabus?.id || 'CS3451';
-      const targetHoursNum = parseInt(selectedHours) || 45;
-      const selectedUnitIds = units
-        .filter((_, idx) => selectedUnits[idx] !== false)
-        .map((u) => (u as any).id || u.title);
-
-      const res = await fetch('http://localhost:8000/api/timeline/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          courseId,
-          targetHours: targetHoursNum,
-          selectedUnitIds,
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data) {
-          if (Array.isArray(data.units) && data.units.length > 0) {
-            setGeneratedTimelineUnits(data.units);
-          }
-          if (Array.isArray(data.lectures)) {
-            setGeneratedTimelineLectures(data.lectures);
-          }
-          setIsTimelineAllocated(true);
-        }
-      }
-    } catch (err) {
-      console.warn('Could not generate timeline via API:', err);
-    } finally {
-      setIsGeneratingTimeline(false);
-    }
-  };
-
-
-  const dynamicTimelineData = useMemo(
-    () => buildTimelineData(units, selectedUnits, generatedTimelineUnits, generatedTimelineLectures),
-    [units, selectedUnits, generatedTimelineUnits, generatedTimelineLectures]
+  const activeSyllabus = useMemo(() =>
+    savedSyllabi.find(s => s.id === selectedSyllabusId) || savedSyllabi[0] || null,
+    [savedSyllabi, selectedSyllabusId]
   );
 
-  const displayedTimelineData = useMemo(() => {
-    if (activeUnitFilter === 'all') return dynamicTimelineData;
-    return dynamicTimelineData.filter(
-      (item) => item.unit === activeUnitFilter || item.unit.toLowerCase() === activeUnitFilter.toLowerCase()
-    );
-  }, [dynamicTimelineData, activeUnitFilter]);
-
-  useEffect(() => {
-    if (activeUnitFilter !== 'all') {
-      const exists = dynamicTimelineData.some(
-        (item) => item.unit === activeUnitFilter || item.unit.toLowerCase() === activeUnitFilter.toLowerCase()
-      );
-      if (!exists) setActiveUnitFilter('all');
-    }
-  }, [dynamicTimelineData, activeUnitFilter]);
-
   const filteredSyllabi = useMemo(() => {
-    const q = syllabusSearch.toLowerCase().trim();
-    if (!q) return savedSyllabi;
-    return savedSyllabi.filter((s) => s.code.toLowerCase().includes(q) || s.title.toLowerCase().includes(q));
-  }, [savedSyllabi, syllabusSearch]);
+    if (!searchTerm.trim()) return savedSyllabi;
+    const t = searchTerm.toLowerCase();
+    return savedSyllabi.filter(s => s.code.toLowerCase().includes(t) || s.title.toLowerCase().includes(t));
+  }, [savedSyllabi, searchTerm]);
 
+  const targetHoursNum = useMemo(() => {
+    if (hasSyllabusHours && syllabusTotalHours && syllabusTotalHours > 0) return syllabusTotalHours;
+    if (selectedHours === 'Custom') return parseInt(customHoursInput || '45') || 45;
+    return parseInt(selectedHours) || 45;
+  }, [hasSyllabusHours, syllabusTotalHours, selectedHours, customHoursInput]);
+
+  // Fetch saved syllabi list
   useEffect(() => {
-    if (!syllabusSearch.trim()) return;
-    const q = syllabusSearch.toLowerCase().trim();
-    const match = savedSyllabi.find(
-      (s) => s.code.toLowerCase() === q || s.title.toLowerCase() === q || s.code.toLowerCase().includes(q) || s.title.toLowerCase().includes(q)
-    );
-    if (match && match.id && match.id !== selectedSyllabusId) {
-      setSelectedSyllabusId(match.id);
+    const fetchSyllabi = async () => {
+      try {
+        let res: any;
+        try { res = await client.get(API.syllabus.saved); } catch { res = await syllabusApi.getSyllabusList(); }
+        const list = Array.isArray(res) ? res : Array.isArray(res?.items) ? res.items : [];
+        const seen = new Set<string>();
+        const formatted: SavedSyllabus[] = [];
+        list.forEach((c: any) => {
+          const ci = c.course || c;
+          const code = (c.courseCode || c.code || ci?.code || ci?.courseCode || '').trim();
+          const title = (c.courseName || c.title || ci?.title || ci?.courseName || '').trim();
+          const id = c.id || c.syllabusId || ci?.id || code;
+          const key = (code || id).toLowerCase();
+          if (code && title && !seen.has(key)) { seen.add(key); formatted.push({ id, code, title, updatedAt: c.updatedAt }); }
+        });
+        setSavedSyllabi(formatted);
+        if (formatted.length > 0) setSelectedSyllabusId(prev => prev || formatted[0].id);
+      } catch (e) { console.warn('Syllabi fetch fallback:', e); }
+    };
+    fetchSyllabi();
+  }, []);
+
+  // Auto-load saved timeline from DB when syllabus is selected & inspect unit hours
+  useEffect(() => {
+    if (!selectedSyllabusId) return;
+    const loadTimeline = async () => {
+      setIsLoadingTimeline(true);
+      setTimelineData(null);
+      setIsTimelineAllocated(false);
+      setHasSyllabusHours(false);
+      setSyllabusTotalHours(null);
+
+      try {
+        const res = await timelineApi.getSyllabusTimeline(selectedSyllabusId);
+        if (res && res.isTimelineAllocated && res.units && res.units.length > 0) {
+          setTimelineData(res);
+          setIsTimelineAllocated(true);
+          // Check if allocated hours exist
+          const totalH = res.total_hours || res.totalAllocatedHours || res.targetHours;
+          if (totalH && totalH > 0) {
+            setHasSyllabusHours(true);
+            setSyllabusTotalHours(totalH);
+          }
+          // Auto-expand first unit
+          const u0Id = res.units[0].unit_id || res.units[0].unitId || '0';
+          setExpandedUnits({ [u0Id]: true });
+        }
+      } catch {
+        // No saved timeline — user needs to generate
+      } finally {
+        setIsLoadingTimeline(false);
+      }
+    };
+    loadTimeline();
+  }, [selectedSyllabusId]);
+
+  const handleGenerate = useCallback(async (forceRegenerate = false) => {
+    if (!selectedSyllabusId && savedSyllabi.length === 0) {
+      setStatusMsg({ type: 'error', text: 'No syllabus selected. Please select a saved syllabus.' });
+      return;
     }
-  }, [syllabusSearch, savedSyllabi, selectedSyllabusId]);
+    setIsGenerating(true);
+    setStatusMsg({ type: 'info', text: 'Generating teaching timeline — processing hour-by-hour allocation...' });
+    try {
+      const selectedUnitsParam = selectedUnitFilter === 'ALL' ? undefined : [selectedUnitFilter];
+      const res = await timelineApi.generateTimeline({
+        courseId: selectedSyllabusId,
+        selectedUnitIds: selectedUnitsParam as any,
+        targetHours: targetHoursNum,
+        customHours: selectedHours === 'Custom' ? parseInt(customHoursInput || '45') : undefined,
+        forceRegenerate,
+      } as any);
 
-  const activeSyllabus = useMemo(() => {
-    if (selectedSyllabusId) return savedSyllabi.find((s) => s.id === selectedSyllabusId);
-    return undefined;
-  }, [savedSyllabi, selectedSyllabusId]);
+      if (res && (res.units || res.success)) {
+        setTimelineData(res);
+        setIsTimelineAllocated(true);
+        const totalH = res.total_hours || res.totalAllocatedHours || targetHoursNum;
+        if (totalH) {
+          setHasSyllabusHours(true);
+          setSyllabusTotalHours(totalH);
+        }
+        const u0Id = res.units?.[0]?.unit_id || res.units?.[0]?.unitId || '0';
+        if (u0Id) setExpandedUnits({ [u0Id]: true });
+        setStatusMsg({
+          type: 'success',
+          text: `Timeline generated & saved to PostgreSQL — ${totalH}h across ${res.units?.length || 0} units.`
+        });
+      }
+    } catch (e: any) {
+      setStatusMsg({ type: 'error', text: e.message || 'Timeline generation failed. Check backend connection.' });
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [selectedSyllabusId, savedSyllabi, targetHoursNum, selectedHours, customHoursInput, selectedUnitFilter]);
 
-  const totalHours = units.reduce((sum, u) => sum + (Number(u.hours) || 9), 0);
-  const selectedCount = Object.values(selectedUnits).filter(Boolean).length;
+  const toggleUnit = (unitId: string) => {
+    setExpandedUnits(prev => ({ ...prev, [unitId]: !prev[unitId] }));
+  };
+
+  // Filter visible units according to unit selection (ALL, 1, 2, 3, 4, 5)
+  const visibleUnits = useMemo(() => {
+    if (!timelineData || !timelineData.units) return [];
+    if (selectedUnitFilter === 'ALL') return timelineData.units;
+    const targetNum = parseInt(selectedUnitFilter);
+    return timelineData.units.filter(u => {
+      const uNum = u.unit_number ?? u.unitNumber;
+      return uNum === targetNum;
+    });
+  }, [timelineData, selectedUnitFilter]);
+
+  // Summary stats
+  const stats = useMemo(() => {
+    if (!timelineData) return null;
+    const units = timelineData.units || [];
+    const totalSlots = units.reduce((s, u) => s + (u.hourly_schedule?.length || u.topics?.length || 0), 0);
+    const totHrs = timelineData.total_hours || timelineData.totalAllocatedHours || targetHoursNum;
+    return {
+      totalUnits: units.length,
+      totalSlots,
+      totalHours: totHrs,
+      avgHoursPerUnit: totHrs / Math.max(1, units.length),
+      avgHoursPerTopic: 1.0,
+      totalWeeks: timelineData.totalTeachingWeeks || Math.ceil(totHrs / 10),
+      labCount: (timelineData.labTimeline || []).length,
+    };
+  }, [timelineData, targetHoursNum]);
 
   return (
     <AppShell>
-      <div className="space-y-6">
+      <div className="flex flex-col gap-6">
+        {/* ── Header ── */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-2xl font-black text-[var(--text-primary)] tracking-tight flex items-center gap-2.5">
+              <CalendarDays className="w-6 h-6 text-indigo-400" />
+              Teaching Timeline Generator
+            </h1>
+            <p className="text-xs font-mono text-[var(--text-muted)] mt-1">
+              1-Hour Slot Allocation · Weight-Adjusted Topic Hierarchy · DB-First Caching
+            </p>
+          </div>
+          {isTimelineAllocated && (
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-400">
+              <Database size={13} /> Saved to PostgreSQL
+            </span>
+          )}
+        </div>
 
-        {/* ─── Hero Header ─── */}
-        <motion.section
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="relative z-30 overflow-visible rounded-3xl border border-[var(--border-subtle)] bg-[var(--bg-card)]/95 backdrop-blur-2xl p-6 md:p-7 shadow-lg"
-        >
-          <div className="flex flex-col gap-5">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-slate-900 text-white dark:bg-sky-950 dark:text-sky-200 border border-slate-800 dark:border-sky-700 px-3.5 py-1.5 text-xs font-mono font-bold shadow-xs">
-                <Sparkles size={14} className="text-sky-400" /> Teaching Timeline Generator
-              </div>
-              <h1 className="mt-3 text-2xl md:text-3xl font-extrabold text-[var(--text-primary)] tracking-tight">
-                Shape the curriculum into a guided weekly teaching plan
-              </h1>
-              {activeSyllabus && (
-                <p className="mt-1.5 text-xs font-mono text-[var(--text-secondary)]">
-                  Active:&nbsp;
-                  <span className="text-blue-700 dark:text-sky-300 font-extrabold bg-blue-50 dark:bg-sky-950/70 px-2 py-0.5 rounded border border-blue-200 dark:border-sky-800">{activeSyllabus.code}</span>
-                  &nbsp;—&nbsp;{activeSyllabus.title}
-                </p>
-              )}
-            </div>
+        {/* ── Controls Bar ── */}
+        <div className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--bg-card)]/95 backdrop-blur-xl p-5 shadow-lg space-y-4">
+          <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
 
-            {/* ── Syllabus Selector & Generate Action Bar (Directly under Page Title) ── */}
-            <div className="pt-4 border-t border-[var(--border-subtle)]/70 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 relative z-30">
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-                <div className="relative min-w-[280px] max-w-full sm:max-w-md z-40">
-                  <div
-                    className="flex items-center justify-between gap-2.5 bg-[var(--bg-hover)] border border-[var(--border-subtle)] rounded-2xl px-4 py-2.5 cursor-pointer hover:border-cyan-400 transition-all shadow-sm group"
-                    onClick={() => setDropdownOpen((v) => !v)}
-                  >
-                    <span className="text-xs font-mono font-bold text-[var(--text-primary)] truncate max-w-[220px] sm:max-w-[260px]">
-                      {isFetchingSyllabi
-                        ? 'Loading syllabi...'
-                        : activeSyllabus
-                          ? `${activeSyllabus.code}: ${activeSyllabus.title}`
-                          : 'Select Saved Syllabus...'}
-                    </span>
-                    <ChevronDown
-                      size={15}
-                      className={`text-cyan-400 shrink-0 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`}
+            {/* Syllabus Dropdown with Search */}
+            <div className="relative min-w-[280px] flex-1">
+              <label className="block text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase mb-1">Select Syllabus</label>
+              <button
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className="w-full flex items-center justify-between bg-[var(--bg-subtle)] text-xs font-mono font-bold text-[var(--text-primary)] border border-[var(--border-subtle)] rounded-2xl px-3.5 py-2.5 hover:border-indigo-400 transition-all"
+              >
+                <span className="truncate">
+                  {activeSyllabus ? `${activeSyllabus.code}: ${activeSyllabus.title}` : 'Select Saved Syllabus...'}
+                </span>
+                <ChevronDown className={`w-4 h-4 text-indigo-400 shrink-0 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {isDropdownOpen && (
+                <div className="absolute top-full left-0 right-0 mt-1.5 z-50 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] shadow-2xl overflow-hidden">
+                  <div className="p-2 border-b border-[var(--border-subtle)] flex items-center gap-2">
+                    <Search size={14} className="text-indigo-400 shrink-0 ml-1" />
+                    <input
+                      type="text" placeholder="Search course code or title..."
+                      value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                      className="w-full px-2 py-1.5 text-xs font-mono bg-transparent outline-none"
                     />
                   </div>
-
-                  <AnimatePresence>
-                    {dropdownOpen && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
-
-                        <motion.div
-                          initial={{ opacity: 0, y: -6, scale: 0.98 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: -6, scale: 0.98 }}
-                          transition={{ duration: 0.15 }}
-                          className="absolute top-full left-0 right-0 sm:w-[360px] z-50 mt-2 rounded-2xl border border-cyan-500/40 bg-[var(--bg-card)] shadow-2xl overflow-hidden p-2 space-y-1.5 text-xs font-mono backdrop-blur-2xl text-[var(--text-primary)]"
-                        >
-                          <div className="p-2 border-b border-[var(--border-subtle)] bg-[var(--bg-subtle)]/50 rounded-xl">
-                            <div className="relative">
-                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-cyan-400" />
-                              <input
-                                type="text"
-                                placeholder="Search syllabi by code or title..."
-                                value={syllabusSearch}
-                                onChange={(e) => setSyllabusSearch(e.target.value)}
-                                onClick={(e) => e.stopPropagation()}
-                                autoFocus
-                                className="w-full pl-8 pr-3 py-2 text-xs font-mono bg-[var(--bg-card)] text-[var(--text-primary)] rounded-lg outline-none border border-[var(--border-subtle)] focus:border-cyan-400 transition-colors placeholder:text-[var(--text-muted)]"
-                              />
-                            </div>
-                          </div>
-                          <div className="max-h-64 overflow-y-auto space-y-1 p-1 custom-scrollbar">
-                            {filteredSyllabi.length === 0 ? (
-                              <p className="text-xs text-[var(--text-muted)] text-center py-4 font-mono">No syllabi found</p>
-                            ) : (
-                              filteredSyllabi.map((s) => (
-                                <button
-                                  key={s.id}
-                                  onClick={() => {
-                                    setSelectedSyllabusId(s.id);
-                                    setDropdownOpen(false);
-                                    setSyllabusSearch('');
-                                  }}
-                                  className={`w-full text-left px-3.5 py-2.5 text-xs font-mono rounded-xl hover:bg-[var(--bg-hover)] transition-colors flex items-center justify-between gap-2 ${
-                                    selectedSyllabusId === s.id
-                                      ? 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 font-bold border border-cyan-500/30'
-                                      : 'text-[var(--text-primary)]'
-                                  }`}
-                                >
-                                  <div className="flex flex-col min-w-0 text-left">
-                                    <span className="font-bold truncate text-[var(--text-primary)]">{s.code}</span>
-                                    <span className="text-[var(--text-secondary)] text-[11px] truncate">{s.title}</span>
-                                  </div>
-                                  {selectedSyllabusId === s.id && <Check size={14} className="text-cyan-500 shrink-0" />}
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        </motion.div>
-                      </>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                {isTimelineAllocated ? (
-                  <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 text-xs font-mono font-bold">
-                    <Check size={16} />
-                    <span>Allocated &amp; Saved in DB (Read-Only Caching)</span>
-                  </div>
-                ) : (
-                  <Button
-                    onClick={handleGenerateTimeline}
-                    disabled={isGeneratingTimeline || isLoadingSyllabus || units.length === 0}
-                    className="bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-semibold shadow-md text-sm px-5 py-2.5 rounded-2xl whitespace-nowrap flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-                  >
-                    {isGeneratingTimeline ? (
-                      <>
-                        <RefreshCw size={15} className="animate-spin text-white" />
-                        Generating AI Timeline...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles size={15} />
-                        Generate Timeline
-                      </>
-                    )}
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
-        </motion.section>
-
-        {/* ─── Loading State ─── */}
-        {isLoadingSyllabus && (
-          <div className="flex items-center justify-center gap-3 py-10 text-[var(--text-muted)] text-sm font-mono">
-            <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
-            Loading syllabus data...
-          </div>
-        )}
-
-        {/* ─── Empty State ─── */}
-        {!isLoadingSyllabus && units.length === 0 && (
-          <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)] p-12 text-center shadow-md">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-dashed border-[var(--border-strong)] bg-[var(--bg-subtle)] p-3 mb-4">
-              <CalendarDays className="w-8 h-8 text-[var(--text-muted)]" />
-            </div>
-            <h3 className="text-lg font-bold text-[var(--text-primary)]">No syllabus units found</h3>
-            <p className="mt-2 max-w-sm mx-auto text-xs text-[var(--text-secondary)] leading-relaxed">
-              {savedSyllabi.length > 0
-                ? 'Select a saved syllabus from the dropdown above to generate a teaching timeline.'
-                : 'Upload and verify a syllabus document to generate a customized teaching timeline and weekly lecture breakdown.'}
-            </p>
-            {savedSyllabi.length === 0 && (
-              <Button asChild size="sm" className="mt-5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold shadow-md">
-                <Link href="/upload">Upload Syllabus <ArrowRight size={14} className="ml-1.5" /></Link>
-              </Button>
-            )}
-          </Card>
-        )}
-
-        {/* ─── Main Content ─── */}
-        {!isLoadingSyllabus && units.length > 0 && (
-          <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-
-            {/* Left: Configuration Panel */}
-            <div className="space-y-4">
-              <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)] shadow-md overflow-hidden">
-                <CardHeader className="p-5 border-b border-[var(--border-subtle)] bg-[var(--bg-subtle)]">
-                  <CardTitle className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
-                    <Layers size={15} className="text-indigo-400" />
-                    Teaching Configuration
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4 p-5">
-
-                  {/* Status Banner: Read-Only Caching vs Unallocated Prompt */}
-                  {isTimelineAllocated ? (
-                    <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 space-y-1.5 font-mono text-xs text-emerald-300">
-                      <div className="flex items-center gap-2 font-bold text-emerald-400">
-                        <Check size={16} />
-                        <span>Timeline Allocated &amp; Persisted (Read-Only)</span>
-                      </div>
-                      <p className="text-[11px] text-slate-300">
-                        This timeline plan is stored in PostgreSQL DB. Reconfiguration is locked to fast-load cached DB data without extra AI processing.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-sky-300 dark:border-cyan-500/30 bg-sky-50 dark:bg-cyan-950/40 p-4 space-y-1.5 font-mono text-xs">
-                      <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-cyan-300">
-                        <Sparkles size={16} className="text-blue-700 dark:text-cyan-400" />
-                        <span className="text-slate-900 dark:text-cyan-300 text-sm font-extrabold">Unallocated Teaching Timeline</span>
-                      </div>
-                      <p className="text-[11px] text-slate-800 dark:text-slate-300 font-medium leading-relaxed">
-                        Set total teaching hours (e.g., 45h, 60h) or allow AI to auto-calculate the optimal 1-hour teaching slot plan.
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Course Summary */}
-                  {activeSyllabus && (
-                    <div className="rounded-2xl border border-sky-300 dark:border-cyan-500/25 bg-sky-50/90 dark:bg-cyan-500/8 p-3.5 space-y-1">
-                      <span className="inline-block px-2.5 py-0.5 rounded bg-slate-900 text-white dark:bg-cyan-950 dark:text-cyan-200 text-[10px] font-mono font-bold uppercase tracking-wider">
-                        Active Syllabus
-                      </span>
-                      <p className="text-xs font-bold text-slate-900 dark:text-[var(--text-primary)]">{activeSyllabus.code}: {activeSyllabus.title}</p>
-                      <div className="flex gap-3 text-[11px] font-mono text-slate-700 dark:text-[var(--text-muted)] mt-1 font-semibold">
-                        <span>{units.length} Units</span>
-                        <span>•</span>
-                        <span>{totalHours} Total Hours</span>
-                        <span>•</span>
-                        <span>{syllabus?.course?.credits || '–'} Credits</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Unit Selector */}
-                  <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-4 shadow-sm">
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-[11px] font-mono font-bold uppercase text-[var(--text-secondary)] tracking-wider">Select Units</p>
-                      <span className="text-[11px] font-mono text-blue-700 dark:text-cyan-400 font-bold">{selectedCount}/{units.length}</span>
-                    </div>
-                    <div className="space-y-2">
-                      {units.map((unit, uIdx) => {
-                        const isChecked = selectedUnits[uIdx] !== false;
-                        return (
-                          <div
-                            key={uIdx}
-                            onClick={() => !isTimelineAllocated && toggleUnit(uIdx)}
-                            className={`flex items-center justify-between rounded-xl border px-3.5 py-2.5 transition-all ${
-                              isTimelineAllocated ? 'cursor-default' : 'cursor-pointer'
-                            } ${
-                              isChecked
-                                ? 'border-cyan-500/40 bg-cyan-500/8 text-[var(--text-primary)]'
-                                : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-[var(--text-muted)]'
-                            }`}
-                          >
-                            <div className="min-w-0">
-                              <span className="text-xs font-mono font-bold text-indigo-400 block">
-                                Unit {unit.unit_number || uIdx + 1}
-                              </span>
-                              <span className="text-xs font-semibold truncate block max-w-[200px]">
-                                {unit.title || `Unit ${unit.unit_number || uIdx + 1}`}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0 ml-2">
-                              <span className="text-[10px] font-mono text-[var(--text-muted)]">{unit.hours || '9'}h</span>
-                              <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
-                                isChecked ? 'bg-indigo-600 border-indigo-500' : 'border-[var(--border-strong)] bg-[var(--bg-subtle)]'
-                              }`}>
-                                {isChecked && <Check size={10} className="text-white" />}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Teaching Hours */}
-                  {!isTimelineAllocated && (
-                    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-4 shadow-sm">
-                      <p className="text-[11px] font-mono font-bold uppercase text-[var(--text-secondary)] tracking-wider mb-3">Teaching Hours</p>
-                      <div className="flex flex-wrap gap-2">
-                        {HOURS_OPTIONS.map((option) => (
-                          <button
-                            key={option}
-                            onClick={() => setSelectedHours(option)}
-                            className={`rounded-full px-3.5 py-1.5 text-xs font-mono transition-all border ${
-                              selectedHours === option
-                                ? 'bg-indigo-600 border-indigo-500 text-white font-bold shadow-sm'
-                                : 'border-[var(--border-subtle)] bg-[var(--bg-card)] text-[var(--text-secondary)] hover:border-indigo-400'
-                            }`}
-                          >
-                            {option}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Stats Row */}
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { label: 'Selected', value: selectedCount, icon: <Check size={13} className="text-emerald-400" /> },
-                      { label: 'Total Hours', value: totalHours, icon: <Clock size={13} className="text-cyan-400" /> },
-                      { label: 'Topics', value: units.reduce((s, u) => s + (u.topics?.length || 0), 0), icon: <BookOpen size={13} className="text-indigo-400" /> },
-                    ].map((stat) => (
-                      <div key={stat.label} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] p-2.5 text-center">
-                        <div className="flex justify-center mb-1">{stat.icon}</div>
-                        <p className="text-sm font-black text-[var(--text-primary)]">{stat.value}</p>
-                        <p className="text-[10px] font-mono text-[var(--text-muted)]">{stat.label}</p>
-                      </div>
+                  <div className="max-h-56 overflow-y-auto">
+                    {filteredSyllabi.length === 0 ? (
+                      <p className="text-xs font-mono text-[var(--text-muted)] p-3 text-center">No matching syllabi found.</p>
+                    ) : filteredSyllabi.map(s => (
+                      <button
+                        key={s.id}
+                        onClick={() => { setSelectedSyllabusId(s.id); setIsDropdownOpen(false); setSearchTerm(''); }}
+                        className={`w-full text-left px-3.5 py-2.5 text-xs font-mono transition-colors ${selectedSyllabusId === s.id ? 'bg-indigo-600 text-white font-extrabold' : 'hover:bg-[var(--bg-hover)] text-[var(--text-primary)]'}`}
+                      >
+                        <span className="font-extrabold">{s.code}</span> — {s.title}
+                      </button>
                     ))}
                   </div>
-
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Right: Timeline Cards & Unitwise Filter */}
-            <div className="space-y-4">
-              {/* ─── Unitwise Filter Bar ─── */}
-              {dynamicTimelineData.length > 0 && (
-                <div className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4.5 shadow-md space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
-                        <Filter size={14} />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-mono font-bold uppercase text-[var(--text-primary)] tracking-wider flex items-center gap-2">
-                          Unitwise Timeline Filter
-                        </h4>
-                        <p className="text-[11px] font-mono text-[var(--text-muted)]">
-                          {activeUnitFilter === 'all'
-                            ? `Showing all ${dynamicTimelineData.length} units`
-                            : `Filtered to ${activeUnitFilter} of ${dynamicTimelineData.length} units`}
-                        </p>
-                      </div>
-                    </div>
-
-                    {activeUnitFilter !== 'all' && (
-                      <button
-                        onClick={() => setActiveUnitFilter('all')}
-                        className="text-[11px] font-mono text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1 font-bold bg-cyan-500/10 border border-cyan-500/30 px-3 py-1 rounded-full"
-                      >
-                        Reset Filter
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Filter Pills */}
-                  <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1 custom-scrollbar">
-                    <button
-                      onClick={() => setActiveUnitFilter('all')}
-                      className={`rounded-xl px-3.5 py-2 text-xs font-mono font-semibold transition-all shrink-0 flex items-center gap-2 border ${
-                        activeUnitFilter === 'all'
-                          ? 'bg-gradient-to-r from-cyan-500 to-indigo-600 border-transparent text-white font-bold shadow-md'
-                          : 'border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text-secondary)] hover:border-cyan-400'
-                      }`}
-                    >
-                      <Layers size={13} />
-                      <span>All Units</span>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        activeUnitFilter === 'all' ? 'bg-white/20 text-white' : 'bg-[var(--bg-card)] text-slate-400'
-                      }`}>
-                        {dynamicTimelineData.length}
-                      </span>
-                    </button>
-
-                    {dynamicTimelineData.map((item) => {
-                      const isActive = activeUnitFilter === item.unit;
-                      const sessionCount = item.sessions?.length || 0;
-                      return (
-                        <button
-                          key={item.unit}
-                          onClick={() => setActiveUnitFilter(item.unit)}
-                          className={`rounded-xl px-3.5 py-2 text-xs font-mono font-semibold transition-all shrink-0 flex items-center gap-2 border ${
-                            isActive
-                              ? 'bg-indigo-600 border-indigo-500 text-white font-bold shadow-md'
-                              : 'border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text-secondary)] hover:border-indigo-400'
-                          }`}
-                        >
-                          <span>{item.unit}</span>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            isActive ? 'bg-white/20 text-white' : 'bg-[var(--bg-card)] text-slate-400'
-                          }`}>
-                            {sessionCount}h
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
                 </div>
               )}
+            </div>
 
-              {displayedTimelineData.length === 0 ? (
-                <div className="flex items-center justify-center h-40 rounded-3xl border border-dashed border-[var(--border-strong)] text-[var(--text-muted)] text-sm font-mono">
-                  {dynamicTimelineData.length === 0
-                    ? 'No units selected — check a unit on the left to see its timeline.'
-                    : 'No sessions found for the selected unit filter.'}
+            {/* Unit Selection Filter (All Units, 1, 2, 3, 4, 5) */}
+            <div>
+              <label className="block text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase mb-1">Unit Filter</label>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {(['ALL', '1', '2', '3', '4', '5'] as const).map(u => (
+                  <button
+                    key={u}
+                    onClick={() => setSelectedUnitFilter(u)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold border transition-all ${selectedUnitFilter === u ? 'bg-indigo-600 border-indigo-500 text-white' : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-indigo-400'}`}
+                  >
+                    {u === 'ALL' ? 'All Units' : `Unit ${u}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Smart Hours Selector / Badge */}
+            <div>
+              <label className="block text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase mb-1">Total Hours</label>
+              {hasSyllabusHours ? (
+                <div className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-mono font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-400">
+                  <Check size={13} /> {syllabusTotalHours}h Allocated by Syllabus
                 </div>
               ) : (
-                displayedTimelineData.map((item, idx) => (
-                  <motion.div
-                    key={`${item.unit}-${idx}`}
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.06 }}
-                  >
-                    <TimelineCard
-                      unit={item.unit}
-                      topic={item.topic}
-                      hours={item.hours}
-                      sessions={item.sessions}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {HOURS_OPTIONS.map(h => (
+                    <button
+                      key={h}
+                      onClick={() => setSelectedHours(h)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold border transition-all ${selectedHours === h ? 'bg-indigo-600 border-indigo-500 text-white' : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-indigo-400'}`}
+                    >{h}</button>
+                  ))}
+                  {selectedHours === 'Custom' && (
+                    <input
+                      type="number" min={10} max={200}
+                      value={customHoursInput} onChange={e => setCustomHoursInput(e.target.value)}
+                      placeholder="hrs" className="w-16 px-2 py-1.5 text-xs font-mono border border-indigo-500/40 bg-[var(--bg-subtle)] rounded-xl outline-none text-center"
                     />
-                  </motion.div>
-                ))
+                  )}
+                </div>
               )}
             </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 shrink-0 self-end">
+              {isTimelineAllocated && (
+                <Button
+                  onClick={() => handleGenerate(true)}
+                  disabled={isGenerating}
+                  className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold rounded-2xl border border-slate-500/40 bg-transparent text-[var(--text-secondary)] hover:border-slate-400"
+                  variant="ghost"
+                >
+                  <RefreshCw size={13} className={isGenerating ? 'animate-spin' : ''} />
+                  Regenerate
+                </Button>
+              )}
+              <Button
+                onClick={() => handleGenerate(false)}
+                disabled={isGenerating || isLoadingTimeline}
+                className="flex items-center gap-1.5 px-5 py-2.5 text-xs font-bold rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-900/40 transition-all"
+              >
+                {isGenerating ? <RefreshCw size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                {isTimelineAllocated ? 'Load from DB' : 'Generate Timeline'}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Status Message ── */}
+        <AnimatePresence>
+          {statusMsg && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+              className={`flex items-center gap-2 px-4 py-3 rounded-2xl border text-xs font-mono font-bold ${
+                statusMsg.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
+                statusMsg.type === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
+                'bg-indigo-500/10 border-indigo-500/30 text-indigo-400'
+              }`}
+            >
+              {statusMsg.type === 'success' ? <CheckCircle2 size={14} /> : statusMsg.type === 'error' ? <AlertCircle size={14} /> : <Database size={14} />}
+              {statusMsg.text}
+              <button onClick={() => setStatusMsg(null)} className="ml-auto opacity-60 hover:opacity-100">×</button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Loading ── */}
+        {isLoadingTimeline && (
+          <div className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-10 flex items-center justify-center gap-3 text-xs font-mono text-[var(--text-muted)]">
+            <Database size={16} className="animate-pulse text-indigo-400" />
+            Loading timeline from PostgreSQL...
           </div>
         )}
 
+        {/* ── Timeline Content ── */}
+        {!isLoadingTimeline && timelineData && stats && (
+          <div className="space-y-5">
+            {/* Summary Stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {[
+                { label: 'Total Units', value: stats.totalUnits, color: 'text-indigo-400', icon: <Layers size={14} /> },
+                { label: 'Total Hourly Slots', value: stats.totalSlots, color: 'text-cyan-400', icon: <BookOpen size={14} /> },
+                { label: 'Total Hours', value: `${stats.totalHours}h`, color: 'text-emerald-400', icon: <Clock size={14} /> },
+                { label: 'Avg Hrs / Unit', value: `${stats.avgHoursPerUnit.toFixed(1)}h`, color: 'text-violet-400', icon: <BarChart3 size={14} /> },
+                { label: 'Slot Duration', value: `1.0h`, color: 'text-amber-400', icon: <Zap size={14} /> },
+                { label: 'Teaching Weeks', value: stats.totalWeeks, color: 'text-rose-400', icon: <CalendarDays size={14} /> },
+              ].map(s => (
+                <div key={s.label} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 text-center space-y-1">
+                  <div className={`flex items-center justify-center gap-1 text-[10px] font-mono font-bold ${s.color} opacity-70`}>
+                    {s.icon} {s.label}
+                  </div>
+                  <div className={`text-xl font-black ${s.color}`}>{s.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Course Info */}
+            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-3 flex flex-wrap items-center gap-4 text-xs font-mono">
+              <span className="px-3 py-1 rounded-full bg-indigo-600 text-white font-extrabold uppercase">{timelineData.courseCode || timelineData.course_code}</span>
+              <span className="font-extrabold text-[var(--text-primary)]">{timelineData.courseTitle || timelineData.course_title}</span>
+              <span className="text-[var(--text-muted)]">Generated: {timelineData.generatedAt ? new Date(timelineData.generatedAt).toLocaleDateString() : '—'}</span>
+              {isTimelineAllocated && (
+                <span className="ml-auto flex items-center gap-1.5 text-emerald-400 font-bold">
+                  <Check size={12} /> Saved to PostgreSQL
+                </span>
+              )}
+            </div>
+
+            {/* Unit Timeline Cards */}
+            <div className="space-y-3">
+              <h2 className="text-sm font-extrabold text-[var(--text-primary)] tracking-tight flex items-center gap-2 px-1">
+                <CalendarDays size={15} className="text-indigo-400" />
+                Hourly Unit Teaching Schedule ({visibleUnits.length} {visibleUnits.length === 1 ? 'Unit' : 'Units'} Displayed)
+              </h2>
+              {(visibleUnits || []).map((unit, uIdx) => {
+                const uId = unit.unit_id || unit.unitId || String(uIdx);
+                const uNum = unit.unit_number ?? unit.unitNumber ?? (uIdx + 1);
+                const uTitle = unit.unit_title || unit.unitTitle || `Unit ${uNum}`;
+                const uHours = unit.total_unit_hours ?? unit.totalHours ?? unit.allocatedHours ?? 9;
+                const schedule: HourlySlot[] = unit.hourly_schedule || unit.hourlySchedule || (unit.topics || []).map((t: any, i: number) => ({
+                  hour: t.teachingOrder || i + 1,
+                  topic: t.topicTitle || t.topic || `Topic ${i + 1}`,
+                  topics_covered: t.topicsCovered || [t.topicTitle || t.topic],
+                  bloom_level: t.bloomLevel || t.bloom_level || 'Understand'
+                }));
+                const isExpanded = !!expandedUnits[uId];
+
+                return (
+                  <motion.div
+                    key={uId}
+                    initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: uIdx * 0.04 }}
+                    className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden shadow-md"
+                  >
+                    {/* Unit Header */}
+                    <button
+                      onClick={() => toggleUnit(uId)}
+                      className="w-full flex items-center justify-between p-5 hover:bg-[var(--bg-hover)] transition-colors group"
+                    >
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <span className="px-2.5 py-0.5 rounded-full bg-indigo-600 text-white text-xs font-extrabold font-mono shrink-0">
+                          UNIT {uNum}
+                        </span>
+                        <span className="font-extrabold text-[var(--text-primary)] text-sm truncate">{uTitle}</span>
+                      </div>
+                      <div className="flex items-center gap-4 shrink-0 text-xs font-mono">
+                        <span className="text-emerald-400 font-bold">{uHours} Hours Total</span>
+                        <span className="text-cyan-400 font-bold">{schedule.length} Hourly Slots</span>
+                        {isExpanded ? <CollapseIcon size={15} className="text-indigo-400" /> : <ChevronRight size={15} className="text-[var(--text-muted)]" />}
+                      </div>
+                    </button>
+
+                    {/* Unit Detail */}
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.22 }}
+                          className="overflow-hidden border-t border-[var(--border-subtle)]"
+                        >
+                          <div className="p-5 space-y-3">
+                            {/* Hourly Breakdown Table */}
+                            <div className="overflow-x-auto rounded-2xl border border-[var(--border-subtle)]">
+                              <table className="w-full text-xs font-mono">
+                                <thead>
+                                  <tr className="border-b border-[var(--border-subtle)] bg-[var(--bg-subtle)]">
+                                    <th className="text-left px-4 py-2.5 font-extrabold text-[var(--text-muted)] w-24">Slot</th>
+                                    <th className="text-left px-4 py-2.5 font-extrabold text-[var(--text-muted)]">Topic / Subtopic Breakdown</th>
+                                    <th className="text-center px-4 py-2.5 font-extrabold text-[var(--text-muted)] w-28">Bloom Level</th>
+                                    <th className="text-center px-4 py-2.5 font-extrabold text-[var(--text-muted)] w-24">Duration</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {schedule.map((slot, sIdx) => {
+                                    const bloom = slot.bloom_level || 'Understand';
+
+                                    // Sanitize slot topic title if it repeats parent string in parentheses
+                                    let displayTopic = (slot.topic || '').trim();
+                                    const topicMatch = displayTopic.match(/^(.*?)\s*\((.*?)\)$/);
+                                    if (topicMatch && topicMatch[1].trim().toLowerCase() === topicMatch[2].trim().toLowerCase()) {
+                                      displayTopic = topicMatch[1].trim();
+                                    }
+
+                                    // Clean and deduplicate covered subtopics
+                                    const mainTopicLower = displayTopic.toLowerCase();
+                                    const rawCovered = slot.topics_covered && slot.topics_covered.length > 0
+                                      ? slot.topics_covered
+                                      : [displayTopic];
+
+                                    const covered = rawCovered
+                                      .map(c => (c || '').trim())
+                                      .filter((c, idx, self) => c.length > 0 && self.findIndex(s => s.toLowerCase() === c.toLowerCase()) === idx)
+                                      .filter(c => c.toLowerCase() !== mainTopicLower);
+
+                                    return (
+                                      <tr key={slot.hour || sIdx}
+                                        className="border-b border-[var(--border-subtle)]/50 hover:bg-[var(--bg-hover)] transition-colors last:border-0">
+                                        <td className="px-4 py-3">
+                                          <span className="px-2 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 font-extrabold text-[11px]">
+                                            Hour {slot.hour}
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-[var(--text-primary)]">
+                                          <div className="font-semibold text-xs text-[var(--text-primary)]">{displayTopic}</div>
+                                          {covered.length > 0 && (
+                                            <div className="flex flex-wrap gap-1 mt-1.5">
+                                              {covered.map((sub, subIdx) => (
+                                                <span key={subIdx} className="px-2 py-0.5 rounded-md bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[10px] text-[var(--text-secondary)] font-mono">
+                                                  • {sub}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${BLOOM_COLORS[bloom] || BLOOM_COLORS['Understand']}`}>
+                                            {bloom}
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold text-[10px]">
+                                            1 Hour
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                                <tfoot>
+                                  <tr className="border-t-2 border-[var(--border-subtle)] bg-[var(--bg-subtle)]">
+                                    <td colSpan={2} className="px-4 py-2.5 font-extrabold text-[var(--text-primary)] text-right">Total Unit Teaching Slots:</td>
+                                    <td className="px-4 py-2.5 text-center font-extrabold text-indigo-400">{schedule.length} Slots</td>
+                                    <td className="px-4 py-2.5 text-center font-extrabold text-emerald-400">{uHours} Hours</td>
+                                  </tr>
+                                </tfoot>
+                              </table>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                );
+              })}
+            </div>
+
+            {/* Lab Experiments */}
+            {(timelineData.labTimeline || []).length > 0 && (
+              <div className="space-y-3">
+                <h2 className="text-sm font-extrabold text-[var(--text-primary)] flex items-center gap-2 px-1">
+                  <FlaskConical size={15} className="text-cyan-400" /> Lab Timeline
+                </h2>
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
+                  <table className="w-full text-xs font-mono">
+                    <thead>
+                      <tr className="border-b border-[var(--border-subtle)] bg-[var(--bg-subtle)]">
+                        <th className="text-left px-4 py-2.5 font-extrabold text-[var(--text-muted)]">#</th>
+                        <th className="text-left px-4 py-2.5 font-extrabold text-[var(--text-muted)]">Experiment</th>
+                        <th className="text-center px-4 py-2.5 font-extrabold text-[var(--text-muted)]">Hours</th>
+                        <th className="text-center px-4 py-2.5 font-extrabold text-[var(--text-muted)]">Week</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(timelineData.labTimeline || []).map((lab: any, idx: number) => (
+                        <tr key={idx} className="border-b border-[var(--border-subtle)]/50 hover:bg-[var(--bg-hover)] last:border-0">
+                          <td className="px-4 py-3 font-bold text-[var(--text-muted)]">{lab.experimentNumber || idx + 1}</td>
+                          <td className="px-4 py-3 text-[var(--text-primary)] font-semibold">{lab.experimentTitle}</td>
+                          <td className="px-4 py-3 text-center text-cyan-400 font-bold">{lab.estimatedHours || 3}h</td>
+                          <td className="px-4 py-3 text-center text-indigo-400 font-bold">W{lab.weekNumber || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Empty State ── */}
+        {!isLoadingTimeline && !timelineData && !isGenerating && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+            className="rounded-3xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-14 text-center space-y-4"
+          >
+            <CalendarDays className="w-14 h-14 text-indigo-400 mx-auto opacity-60" />
+            <h3 className="text-lg font-extrabold text-[var(--text-primary)]">No Timeline Generated Yet</h3>
+            <p className="text-xs font-mono text-[var(--text-muted)] max-w-md mx-auto leading-relaxed">
+              Select a saved syllabus and click <strong>Generate Timeline</strong>.
+              The timeline is generated once and saved permanently to PostgreSQL.
+              On future visits, it loads instantly from the database.
+            </p>
+            <Button
+              onClick={() => handleGenerate(false)}
+              className="mt-2 px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-lg shadow-indigo-900/40"
+            >
+              <Sparkles size={14} className="mr-2" /> Generate Timeline
+            </Button>
+          </motion.div>
+        )}
       </div>
     </AppShell>
   );

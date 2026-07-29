@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/ExperimentMapperTab.css';
 import React, { useState } from "react";
 import { FlaskConical, ArrowRightLeft, BookOpen, CheckCircle } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";

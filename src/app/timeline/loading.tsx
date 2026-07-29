@@ -1,3 +1,4 @@
+import './styles/loading.css';
 import React from 'react';
 import { AppShell } from '@/components/layout/app-shell';
 import { Loader2, Waypoints } from 'lucide-react';

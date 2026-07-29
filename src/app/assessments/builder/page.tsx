@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -41,13 +41,8 @@ import { CSS } from '@dnd-kit/utilities';
 
 import { AppShell } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
-import {
-  useMCQStore,
-  Assessment,
-  MCQQuestion,
-  BLOOM_LEVEL_DESCRIPTIONS,
-  BloomLevel
-} from '@/lib/mcq-store';
+import { useMCQStore, BLOOM_LEVEL_DESCRIPTIONS } from '@/stores';
+import { Assessment, MCQQuestion, BloomLevel } from '@/types';
 import { toast } from 'sonner';
 
 // Sortable Question Item Component using @dnd-kit

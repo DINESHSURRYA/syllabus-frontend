@@ -1,11 +1,12 @@
 "use client";
-
+import './styles/unit-accordion.css';
 import { useState } from 'react';
 import * as Accordion from '@radix-ui/react-accordion';
 import { motion } from 'framer-motion';
 import { ArrowDown, ArrowUp, ChevronDown, Edit3, Plus, Trash2, Check, X, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useSyllabusStore, UnitItem, TopicItem } from '@/lib/store';
+import { useSyllabusStore } from '@/stores';
+import { UnitItem, TopicItem } from '@/types';
 
 export function UnitAccordion() {
   const {

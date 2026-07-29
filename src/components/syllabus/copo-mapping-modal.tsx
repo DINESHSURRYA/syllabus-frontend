@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/copo-mapping-modal.css';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -36,19 +36,21 @@ export interface ProgramOutcomeDef {
 }
 
 export const STANDARD_POS: ProgramOutcomeDef[] = [
-  { code: 'PO1', shortName: 'Engg Knowledge', fullName: 'Apply knowledge of mathematics, science & engineering fundamentals', category: 'Technical' },
-  { code: 'PO2', shortName: 'Problem Analysis', fullName: 'Identify, formulate, and analyze complex engineering problems', category: 'Technical' },
-  { code: 'PO3', shortName: 'Design/Dev', fullName: 'Design solutions for complex engineering problems and systems', category: 'Technical' },
-  { code: 'PO4', shortName: 'Investigations', fullName: 'Conduct investigations of complex problems using research methods', category: 'Technical' },
-  { code: 'PO5', shortName: 'Modern Tools', fullName: 'Create, select, and apply appropriate modern IT tools & resources', category: 'Technical' },
-  { code: 'PO6', shortName: 'Engineer & Society', fullName: 'Apply reasoning informed by contextual knowledge regarding societal issues', category: 'Contextual' },
-  { code: 'PO7', shortName: 'Environment', fullName: 'Understand impact of professional solutions in environmental contexts', category: 'Contextual' },
-  { code: 'PO8', shortName: 'Ethics', fullName: 'Apply ethical principles and commit to professional ethics', category: 'Contextual' },
-  { code: 'PO9', shortName: 'Teamwork', fullName: 'Function effectively as an individual and as a member or leader in teams', category: 'Professional' },
-  { code: 'PO10', shortName: 'Communication', fullName: 'Communicate effectively on complex engineering activities', category: 'Professional' },
-  { code: 'PO11', shortName: 'Project Mgmt', fullName: 'Demonstrate knowledge and understanding of engineering management principles', category: 'Professional' },
-  { code: 'PSO1', shortName: 'Domain Systems', fullName: 'Design and develop specialized domain architecture and software systems', category: 'PSO' },
-  { code: 'PSO2', shortName: 'AI Intelligence', fullName: 'Apply AI, machine learning and data engineering to real-world problems', category: 'PSO' },
+  { code: 'PO1',  shortName: 'Engg Knowledge',   fullName: 'Apply knowledge of mathematics, science & engineering fundamentals',               category: 'Technical' },
+  { code: 'PO2',  shortName: 'Problem Analysis',  fullName: 'Identify, formulate, and analyze complex engineering problems',                    category: 'Technical' },
+  { code: 'PO3',  shortName: 'Design/Dev',        fullName: 'Design solutions for complex engineering problems and systems',                    category: 'Technical' },
+  { code: 'PO4',  shortName: 'Investigations',    fullName: 'Conduct investigations of complex problems using research methods',                category: 'Technical' },
+  { code: 'PO5',  shortName: 'Modern Tools',      fullName: 'Create, select, and apply appropriate modern IT tools & resources',               category: 'Technical' },
+  { code: 'PO6',  shortName: 'Engineer & Society',fullName: 'Apply reasoning informed by contextual knowledge regarding societal issues',       category: 'Contextual' },
+  { code: 'PO7',  shortName: 'Environment',       fullName: 'Understand impact of professional solutions in environmental contexts',            category: 'Contextual' },
+  { code: 'PO8',  shortName: 'Ethics',            fullName: 'Apply ethical principles and commit to professional ethics',                       category: 'Contextual' },
+  { code: 'PO9',  shortName: 'Teamwork',          fullName: 'Function effectively as an individual and as a member or leader in teams',        category: 'Professional' },
+  { code: 'PO10', shortName: 'Communication',     fullName: 'Communicate effectively on complex engineering activities',                        category: 'Professional' },
+  { code: 'PO11', shortName: 'Project Mgmt',      fullName: 'Demonstrate knowledge and understanding of engineering management principles',    category: 'Professional' },
+  { code: 'PO12', shortName: 'Life-long Learning',fullName: 'Recognise the need for, and have the ability to engage in independent learning',  category: 'Professional' },
+  { code: 'PSO1', shortName: 'Domain Systems',    fullName: 'Design and develop specialized domain architecture and software systems',         category: 'PSO' },
+  { code: 'PSO2', shortName: 'AI Intelligence',   fullName: 'Apply AI, machine learning and data engineering to real-world problems',          category: 'PSO' },
+  { code: 'PSO3', shortName: 'Emerging Tech',     fullName: 'Utilize emerging technologies and infrastructure for innovative solutions',        category: 'PSO' },
 ];
 
 export function CoPoMappingModal({
@@ -150,7 +152,26 @@ export function CoPoMappingModal({
     setCourseOutcomes(formattedCos);
 
     // Initialize mapping matrix values
-    const existingMapping = content.co_po_mapping || content.coPoMapping || syllabusData.coPoMapping || [];
+    const rawMapping = content.co_po_mapping || content.coPoMapping || syllabusData.coPoMapping || [];
+    // Normalize: if rawMapping is an object/matrix (e.g. {CO1: {PO1: 3, ...}}), convert to array format
+    let existingMapping: any[] = [];
+    if (Array.isArray(rawMapping)) {
+      existingMapping = rawMapping;
+    } else if (rawMapping && typeof rawMapping === 'object') {
+      // Convert matrix object to array of {co_code, po_code, correlation_level}
+      Object.keys(rawMapping).forEach((coKey: string) => {
+        const poMap = rawMapping[coKey];
+        if (poMap && typeof poMap === 'object') {
+          Object.keys(poMap).forEach((poKey: string) => {
+            existingMapping.push({
+              co_code: coKey,
+              po_code: poKey,
+              correlation_level: poMap[poKey]
+            });
+          });
+        }
+      });
+    }
     const matrix: Record<string, Record<string, string>> = {};
 
     formattedCos.forEach((co, cIdx) => {

@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -13,7 +13,7 @@ import {
   BrainCircuit,
   ExternalLink,
 } from 'lucide-react';
-import { useEvaluatorStore } from '@/lib/evaluator-store';
+import { useEvaluatorStore } from '@/stores';
 import { EvaluatorBackButton } from '@/components/ui/evaluator';
 import { cn } from '@/lib/utils';
 import type { InterviewReport } from '@/lib/evaluator-api';
@@ -22,13 +22,13 @@ function ReportScreen({ propReport }: { propReport?: InterviewReport }) {
   const params = useParams();
   const router = useRouter();
   const threadId = (params?.threadId as string) || '';
-  const { sessions, clearSession } = useEvaluatorStore();
+  const { sessions, clearActiveSession } = useEvaluatorStore();
 
   const [report, setReport] = useState<InterviewReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const session = sessions[threadId];
+  const session = (sessions || []).find((s: any) => s.threadId === threadId);
 
   useEffect(() => {
     async function loadReport() {
@@ -51,7 +51,7 @@ function ReportScreen({ propReport }: { propReport?: InterviewReport }) {
   }, [propReport, session?.report]);
 
   const handleRetake = () => {
-    clearSession();
+    clearActiveSession();
     router.push('/evaluator/upload');
   };
 
@@ -117,7 +117,7 @@ function ReportScreen({ propReport }: { propReport?: InterviewReport }) {
   // Synthesize session metrics if not explicitly provided in report object
   const session_metrics = rawMetrics ?? {
     total_questions_asked: session?.totalQuestionsAsked ?? session?.turns.length ?? 0,
-    total_answered_correctly: session?.totalAnsweredCorrectly ?? session?.turns.filter(t => (t.evaluationScore ?? 0) >= 0.6).length ?? 0,
+    total_answered_correctly: session?.totalAnsweredCorrectly ?? session?.turns.filter((t: any) => (t.evaluationScore ?? 0) >= 0.6).length ?? 0,
     total_topics: session?.totalTopics ?? topic_analysis?.length ?? 1,
   };
 

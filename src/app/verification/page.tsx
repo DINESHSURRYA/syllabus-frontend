@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -32,6 +32,7 @@ import {
   Eye,
   RefreshCw,
   FileText,
+  FileCode,
   Award,
   BookMarked,
   ShieldAlert,
@@ -51,12 +52,16 @@ import {
   AlarmClock
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
-import { useSyllabusStore, emptySyllabus, UnitItem, TopicItem } from '@/lib/store';
-import { useGuideStore } from '@/lib/guide-store';
+import { useSyllabusStore, emptySyllabus, useGuideStore } from '@/stores';
+import { UnitItem, TopicItem } from '@/types';
 import { generateTopicTimeline, formatHours, TopicAllocationInput } from '@/lib/services/timeline-service';
 import { uploadAndExtractSyllabusBackend, generateCoPoMapping } from '@/lib/api-client';
+import { syllabusApi } from '@/lib/api';
 import { sanitizeText } from '@/lib/normalizer';
 import { toast } from 'sonner';
+
+import { AIProcessingStatus } from '@/components/syllabus/ai-processing-status';
+import { NotificationCenter } from '@/components/notifications/notification-center';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -209,6 +214,8 @@ const emptySyllabusData: FullSyllabusData = {
 };
 
 function mapBackendToFullSyllabus(backendData: any): FullSyllabusData {
+  if (!backendData) return emptySyllabusData;
+
   const content = backendData.content || backendData;
   const courseObj = (typeof content.course === 'object' && content.course) ? content.course : (typeof backendData.course === 'object' && backendData.course) ? backendData.course : {};
 
@@ -217,85 +224,138 @@ function mapBackendToFullSyllabus(backendData: any): FullSyllabusData {
   const pdfCourseCode = backendData.pdfCourseCode || content.pdfCourseCode || (backendData as any).pdf_course_code || "";
   const mismatchWarning = backendData.mismatchWarning || content.mismatchWarning || (backendData as any).mismatch_warning || "";
 
-  const courseCode = sanitizeText(backendData.courseCode || content.courseCode || courseObj.code || courseObj.courseCode || content.metadata?.courseCode || "COURSE");
-  const courseTitle = sanitizeText(backendData.courseName || backendData.courseTitle || content.courseName || content.courseTitle || courseObj.title || courseObj.courseName || content.metadata?.courseName || "Untitled Syllabus");
+  const courseCode = sanitizeText(
+    backendData.courseCode ||
+    backendData.course_code ||
+    content.courseCode ||
+    content.course_code ||
+    courseObj.code ||
+    courseObj.courseCode ||
+    content.metadata?.courseCode ||
+    "COURSE"
+  );
+  const courseTitle = sanitizeText(
+    backendData.courseName ||
+    backendData.course_name ||
+    backendData.courseTitle ||
+    backendData.title ||
+    backendData.name ||
+    content.courseName ||
+    content.course_name ||
+    content.courseTitle ||
+    content.name ||
+    content.title ||
+    courseObj.title ||
+    courseObj.name ||
+    courseObj.courseName ||
+    courseObj.course_name ||
+    content.metadata?.courseName ||
+    content.metadata?.title ||
+    "Untitled Syllabus"
+  );
   const department = sanitizeText(backendData.department || content.department || courseObj.department || content.metadata?.department || "Computer Science & Engineering");
-  const regulation = sanitizeText(backendData.regulation || content.regulation || courseObj.regulation || content.metadata?.regulation || "R2021");
+  const regulation = sanitizeText(backendData.regulation || content.regulation || courseObj.regulation || content.metadata?.regulation || "2021");
   const semester = sanitizeText(backendData.semester || content.semester || courseObj.semester || content.metadata?.semester || "5th Semester");
-  const credits = Number(backendData.credits || content.credits || courseObj.credits || 4);
+  const credits = Number(backendData.credits ?? content.credits ?? courseObj.credits ?? 4) || 4;
 
-  const rawUnits = content.units || backendData.units || [];
-  const units: UnitData[] = rawUnits.map((u: any, uIdx: number) => {
-    const uTitle = sanitizeText(u.title || u.name || `Unit ${uIdx + 1}`);
-    const uHours = parseFloat(u.learningHours || u.hours || 9.0);
-    const rawTopics = u.topics || [];
+  // 1. UNITS & TOPICS MAPPING
+  const rawUnits =
+    backendData.units ||
+    backendData.unitsAndTopics ||
+    backendData.unit_details ||
+    content.units ||
+    content.unitsAndTopics ||
+    content.unit_details ||
+    courseObj.units ||
+    [];
+
+  const units: UnitData[] = (Array.isArray(rawUnits) ? rawUnits : []).map((u: any, uIdx: number) => {
+    const uTitle = sanitizeText(u.title || u.name || u.unitTitle || u.unit_title || u.unitName || `Unit ${uIdx + 1}`);
+    const uHours = parseFloat(u.learningHours || u.hours || u.learning_hours || u.teaching_hours || u.lectureHours || 9.0) || 9.0;
+    
+    const rawTopics = Array.isArray(u.topics) ? u.topics : Array.isArray(u.subtopics) ? u.subtopics : Array.isArray(u.topicList) ? u.topicList : [];
+    
     const topics: TopicData[] = rawTopics.map((t: any, tIdx: number) => {
-      const tTitle = sanitizeText(typeof t === 'string' ? t : t.title || t.name || `Topic ${tIdx + 1}`);
-      const rawSub = (t as any).subtopics || [];
-      const subtopics: SubtopicData[] = rawSub.map((st: any, stIdx: number) => ({
+      const isString = typeof t === 'string';
+      const tTitle = sanitizeText(isString ? t : t.title || t.name || t.topic_name || t.topicTitle || `Topic ${tIdx + 1}`);
+      const rawSub = (!isString && t && typeof t === 'object') ? (t.subtopics || t.items || t.sub_topics || []) : [];
+      
+      const subtopics: SubtopicData[] = (Array.isArray(rawSub) ? rawSub : []).map((st: any, stIdx: number) => ({
         id: `s${uIdx + 1}_${tIdx + 1}_${stIdx + 1}`,
-        title: sanitizeText(typeof st === 'string' ? st : (st as any).title || (st as any).name || `Subtopic ${stIdx + 1}`),
+        title: sanitizeText(typeof st === 'string' ? st : st.title || st.name || st.subtopic_name || `Subtopic ${stIdx + 1}`),
         learningHours: 1.0,
         duration: "45 mins",
         bloom: "Understand"
       }));
 
+      const tHours = (!isString && t && typeof t === 'object' && (t.learningHours || t.hours))
+        ? parseFloat(t.learningHours || t.hours)
+        : Math.max(1, Math.round(uHours / Math.max(1, rawTopics.length)));
+
       return {
-        id: `t${uIdx + 1}_${tIdx + 1}`,
+        id: (!isString && t && t.id) || `t${uIdx + 1}_${tIdx + 1}`,
         title: tTitle,
-        description: sanitizeText(t.description || `Core principles and concepts of ${tTitle}`),
-        difficulty: (t.difficulty || "Intermediate") as any,
-        importance: (t.importance || "High") as any,
-        bloomLevel: (t.bloomLevel || "Understand") as any,
-        learningHours: t.learningHours || Math.max(1, uHours / Math.max(1, rawTopics.length)),
+        description: sanitizeText((!isString && t && (t.description || t.summary)) || `Core principles and concepts of ${tTitle}`),
+        difficulty: (!isString && t && t.difficulty) ? t.difficulty : "Intermediate",
+        importance: (!isString && t && t.importance) ? t.importance : "High",
+        bloomLevel: (!isString && t && (t.bloomLevel || t.bloom_level || t.bloom)) ? (t.bloomLevel || t.bloom_level || t.bloom) : "Understand",
+        learningHours: tHours,
         confidence: 90.0,
         subtopics,
-        skills: t.skills ? t.skills.map((s: string) => sanitizeText(s)) : [tTitle],
-        keywords: t.keywords ? t.keywords.map((k: string) => sanitizeText(k)) : [tTitle],
-        hourAllocationReason: sanitizeText(t.hourAllocationReason || "Pacing aligned with course learning outcomes.")
+        skills: (!isString && t && Array.isArray(t.skills)) ? t.skills.map((s: string) => sanitizeText(s)) : [tTitle],
+        keywords: (!isString && t && Array.isArray(t.keywords)) ? t.keywords.map((k: string) => sanitizeText(k)) : [tTitle],
+        hourAllocationReason: sanitizeText((!isString && t && t.hourAllocationReason) || "Pacing aligned with course learning outcomes.")
       };
     });
 
     return {
       id: u.id || `u${uIdx + 1}`,
       title: uTitle,
-      description: sanitizeText(u.description || `Detailed study of ${uTitle}`),
+      description: sanitizeText(u.description || u.summary || `Detailed study of ${uTitle}`),
       learningHours: uHours,
       topics
     };
   });
 
+  // 2. COURSE OBJECTIVES MAPPING
   const rawObjectives =
+    backendData.courseObjectives ||
+    backendData.course_objectives ||
+    backendData.objectives ||
     content.courseObjectives ||
     content.course_objectives ||
     content.objectives ||
     courseObj.courseObjectives ||
     courseObj.course_objectives ||
     courseObj.objectives ||
-    backendData.courseObjectives ||
-    backendData.course_objectives ||
-    backendData.objectives ||
     [];
   const objectives = (Array.isArray(rawObjectives) ? rawObjectives : [rawObjectives])
-    .map((o: any) => sanitizeText(typeof o === 'string' ? o : o.description || String(o)))
+    .map((o: any) => {
+      if (typeof o === 'string') return sanitizeText(o);
+      if (o && typeof o === 'object') {
+        return sanitizeText(o.description || o.statement || o.title || o.text || o.objective || String(o));
+      }
+      return sanitizeText(String(o));
+    })
     .filter(Boolean);
 
+  // 3. COURSE OUTCOMES MAPPING
   const rawOutcomes =
+    backendData.courseOutcomes ||
+    backendData.course_outcomes ||
+    backendData.outcomes ||
     content.courseOutcomes ||
     content.course_outcomes ||
     content.outcomes ||
     courseObj.courseOutcomes ||
     courseObj.course_outcomes ||
     courseObj.outcomes ||
-    backendData.courseOutcomes ||
-    backendData.course_outcomes ||
-    backendData.outcomes ||
     [];
   const outcomes = (Array.isArray(rawOutcomes) ? rawOutcomes : [rawOutcomes])
     .map((o: any) => {
       if (typeof o === 'string') return sanitizeText(o);
       if (o && typeof o === 'object') {
-        const desc = o.description || o.statement || o.title || '';
+        const desc = o.description || o.statement || o.title || o.text || o.outcome || '';
         const code = o.code ? `${o.code}: ` : '';
         return sanitizeText(`${code}${desc}`.trim() || String(o));
       }
@@ -303,14 +363,54 @@ function mapBackendToFullSyllabus(backendData: any): FullSyllabusData {
     })
     .filter(Boolean);
 
-  const rawTextbooks = content.textbooks || courseObj.textbooks || backendData.textbooks || [];
-  const textbooks = rawTextbooks.map((b: any) => sanitizeText(typeof b === 'string' ? b : b.title || String(b))).filter(Boolean);
+  // 4. RECOMMENDED TEXTBOOKS MAPPING
+  const rawTextbooks =
+    backendData.textBooks ||
+    backendData.textbooks ||
+    backendData.text_books ||
+    content.textBooks ||
+    content.textbooks ||
+    content.text_books ||
+    courseObj.textBooks ||
+    courseObj.textbooks ||
+    courseObj.text_books ||
+    [];
+  const textbooks = (Array.isArray(rawTextbooks) ? rawTextbooks : [rawTextbooks])
+    .map((b: any) => sanitizeText(typeof b === 'string' ? b : b.title || b.name || b.textbook || String(b)))
+    .filter(Boolean);
 
-  const rawRefBooks = content.referenceBooks || content.references || content.reference_books || courseObj.reference_books || courseObj.referenceBooks || backendData.references || [];
-  const referenceBooks = rawRefBooks.map((b: any) => sanitizeText(typeof b === 'string' ? b : b.title || String(b))).filter(Boolean);
+  // 5. REFERENCE BOOKS MAPPING
+  const rawRefBooks =
+    backendData.references ||
+    backendData.referenceBooks ||
+    backendData.reference_books ||
+    content.references ||
+    content.referenceBooks ||
+    content.reference_books ||
+    courseObj.references ||
+    courseObj.referenceBooks ||
+    courseObj.reference_books ||
+    [];
+  const referenceBooks = (Array.isArray(rawRefBooks) ? rawRefBooks : [rawRefBooks])
+    .map((b: any) => sanitizeText(typeof b === 'string' ? b : b.title || b.name || b.reference || String(b)))
+    .filter(Boolean);
 
-  const rawExps = content.labExperiments || content.experiments || courseObj.labExperiments || backendData.labExperiments || [];
-  const labExperiments: LabExperimentData[] = rawExps.map((expItem: any, idx: number) => {
+  // 6. PRACTICAL / LAB EXPERIMENTS MAPPING
+  const rawExps =
+    backendData.laboratoryExperiments ||
+    backendData.labExperiments ||
+    backendData.experiments ||
+    backendData.lab_experiments ||
+    content.laboratoryExperiments ||
+    content.labExperiments ||
+    content.experiments ||
+    content.lab_experiments ||
+    courseObj.laboratoryExperiments ||
+    courseObj.labExperiments ||
+    courseObj.experiments ||
+    [];
+
+  const labExperiments: LabExperimentData[] = (Array.isArray(rawExps) ? rawExps : []).map((expItem: any, idx: number) => {
     if (typeof expItem === 'string') {
       const cleanExp = sanitizeText(expItem);
       return {
@@ -323,45 +423,48 @@ function mapBackendToFullSyllabus(backendData: any): FullSyllabusData {
         mappedUnit: '',
         bloomLevel: '' as any
       };
-    } else {
-      const cleanTitle = sanitizeText(expItem.title || expItem.name || `Experiment ${idx + 1}`);
+    } else if (expItem && typeof expItem === 'object') {
+      const cleanTitle = sanitizeText(expItem.title || expItem.name || expItem.experiment_name || `Experiment ${idx + 1}`);
       return {
         id: expItem.id || `exp_${idx + 1}`,
-        expNumber: sanitizeText(expItem.expNumber || expItem.number || `Exp ${idx + 1}`),
+        expNumber: sanitizeText(expItem.expNumber || expItem.number || expItem.exp_number || `Exp ${idx + 1}`),
         title: cleanTitle,
         description: sanitizeText(expItem.description || `Practical implementation exercise`),
-        hours: expItem.hours || 0,
-        softwareTools: sanitizeText(expItem.softwareTools || expItem.tools || ''),
-        mappedUnit: sanitizeText(expItem.mappedUnit || ''),
-        bloomLevel: expItem.bloomLevel || ''
+        hours: Number(expItem.hours || expItem.duration || 0) || 0,
+        softwareTools: sanitizeText(expItem.softwareTools || expItem.tools || expItem.software || ''),
+        mappedUnit: sanitizeText(expItem.mappedUnit || expItem.unit || ''),
+        bloomLevel: expItem.bloomLevel || expItem.bloom || ''
       };
     }
+    return {
+      id: `exp_${idx + 1}`,
+      expNumber: `Exp ${idx + 1}`,
+      title: `Experiment ${idx + 1}`,
+      description: `Practical implementation exercise`,
+      hours: 0,
+      softwareTools: '',
+      mappedUnit: '',
+      bloomLevel: '' as any
+    };
   });
 
+  // 7. HOURS BREAKDOWN & COMPUTATION
   const totalUnitHoursSum = units.reduce((acc, u) => acc + u.learningHours, 0);
 
-  const parsedLecture = courseObj.hours?.lecture ?? content.lectureHours;
-  const parsedTutorial = courseObj.hours?.tutorial ?? content.tutorialHours;
-  const parsedPractical = courseObj.hours?.practical ?? content.practicalHours;
+  const parseNum = (val: any) => {
+    if (val === undefined || val === null || val === '') return undefined;
+    const n = Number(val);
+    return isNaN(n) ? undefined : n;
+  };
 
-  let lectureHours = 3;
-  if (parsedLecture !== undefined && !isNaN(Number(parsedLecture)) && Number(parsedLecture) > 0) {
-    lectureHours = Number(parsedLecture);
-  }
+  const lectureHours = parseNum(backendData.lectureHours ?? backendData.lecture_hours ?? content.lectureHours ?? content.lecture_hours ?? courseObj.hours?.lecture ?? courseObj.lectureHours) ?? 3;
+  const tutorialHours = parseNum(backendData.tutorialHours ?? backendData.tutorial_hours ?? content.tutorialHours ?? content.tutorial_hours ?? courseObj.hours?.tutorial ?? courseObj.tutorialHours) ?? 0;
+  const practicalHours = parseNum(backendData.practicalHours ?? backendData.practical_hours ?? backendData.labHours ?? backendData.lab_hours ?? content.practicalHours ?? content.practical_hours ?? courseObj.hours?.practical ?? courseObj.practicalHours) ?? 0;
+  const parsedTotal = parseNum(backendData.totalHours ?? backendData.total_hours ?? content.totalHours ?? content.total_hours ?? courseObj.hours?.total ?? courseObj.totalHours);
 
-  let tutorialHours = 0;
-  if (parsedTutorial !== undefined && !isNaN(Number(parsedTutorial))) {
-    tutorialHours = Number(parsedTutorial);
-  }
+  const totalHours = parsedTotal || (totalUnitHoursSum > 0 ? totalUnitHoursSum : (lectureHours + tutorialHours + practicalHours || 45));
 
-  let practicalHours = 0;
-  if (parsedPractical !== undefined && !isNaN(Number(parsedPractical))) {
-    practicalHours = Number(parsedPractical);
-  }
-
-  let totalHours = totalUnitHoursSum > 0 ? totalUnitHoursSum : (lectureHours + tutorialHours + practicalHours || 45);
-
-  // Extract CO-PO Mapping
+  // 8. CO-PO MAPPING DATA
   const rawCoPo = backendData.coPoMapping || content.coPoMapping || {};
   const coStatements = rawCoPo.coStatements || (outcomes.length > 0 ? outcomes.map((out: any, i: number) => {
     const str = typeof out === 'string' ? out : (out?.description ? `${out.code || `CO${i+1}`}: ${out.description}` : String(out));
@@ -386,8 +489,34 @@ function mapBackendToFullSyllabus(backendData: any): FullSyllabusData {
 
   const universityVal = sanitizeText(backendData.university || content.university || courseObj.university || "Anna University");
 
+  // 9. ASSESSMENT SCHEME
+  const rawAssessment = backendData.assessment || content.assessment || courseObj.assessment;
+  let assessment: AssessmentItemData[] = [
+    { id: 'ass_1', component: 'Continuous Internal Assessment (CIA)', weightagePercent: 40, maxMarks: 40, evaluationType: 'Internal' },
+    { id: 'ass_2', component: 'End Semester Examination', weightagePercent: 60, maxMarks: 60, evaluationType: 'External' }
+  ];
+  if (Array.isArray(rawAssessment) && rawAssessment.length > 0) {
+    assessment = rawAssessment.map((a: any, idx: number) => ({
+      id: a.id || `ass_${idx + 1}`,
+      component: sanitizeText(a.component || a.name || a.title || `Assessment Component ${idx + 1}`),
+      weightagePercent: Number(a.weightagePercent || a.weightage || a.weight || 50),
+      maxMarks: Number(a.maxMarks || a.max_marks || a.marks || 100),
+      evaluationType: sanitizeText(a.evaluationType || a.type || 'Internal')
+    }));
+  }
+
+  // 10. ADDITIONAL INFO
+  const rawAdd = backendData.additionalInfo || backendData.additional_information || content.additionalInfo || content.additional_information || {};
+  const additionalInfo: AdditionalInfoData = {
+    notes: sanitizeText(rawAdd.notes || ''),
+    prerequisites: sanitizeText(rawAdd.prerequisites || backendData.prerequisites || content.prerequisites || courseObj.prerequisites || ''),
+    softwareRequirements: sanitizeText(rawAdd.softwareRequirements || rawAdd.software_requirements || ''),
+    labRequirements: sanitizeText(rawAdd.labRequirements || rawAdd.lab_requirements || ''),
+    remarks: sanitizeText(rawAdd.remarks || '')
+  };
+
   return {
-    id: backendData.id || "course_dynamic",
+    id: backendData.id || courseCode || "course_dynamic",
     isCodeMismatch,
     userCourseCode,
     pdfCourseCode,
@@ -414,17 +543,8 @@ function mapBackendToFullSyllabus(backendData: any): FullSyllabusData {
     labExperiments,
     textbooks,
     referenceBooks,
-    assessment: [
-      { id: 'ass_1', component: 'Continuous Internal Assessment (CIA)', weightagePercent: 40, maxMarks: 40, evaluationType: 'Internal' },
-      { id: 'ass_2', component: 'End Semester Examination', weightagePercent: 60, maxMarks: 60, evaluationType: 'External' }
-    ],
-    additionalInfo: {
-      notes: "",
-      prerequisites: "",
-      softwareRequirements: "",
-      labRequirements: "",
-      remarks: ""
-    },
+    assessment,
+    additionalInfo,
     coPoMapping: {
       coStatements,
       poStatements,
@@ -451,6 +571,8 @@ export default function SyllabusVerificationPage() {
   // --------------------------------------------------------------------------
   const [syllabus, setSyllabus] = useState<FullSyllabusData>(emptySyllabusData);
   const [history, setHistory] = useState<FullSyllabusData[]>([emptySyllabusData]);
+  const [activeTab, setActiveTab] = useState<'general' | 'units' | 'topics' | 'cos' | 'copo' | 'references' | 'json'>('general');
+  const [currentJobId, setCurrentJobId] = useState<string | undefined>(undefined);
 
   // --------------------------------------------------------------------------
   // REAL-TIME EXTRACTION PIPELINE ORCHESTRATOR (BACKEND ONLY)
@@ -460,7 +582,7 @@ export default function SyllabusVerificationPage() {
   useEffect(() => {
     if (!pendingExtraction || !pendingExtraction.file) {
       if (extractionState.isExtracting && !isExecutingRef.current) {
-        setExtractionProgress({ isExtracting: false });
+        setExtractionProgress({ isExtracting: false, step: 0, progress: 0, statusText: '', error: null });
       }
       return;
     }
@@ -468,72 +590,131 @@ export default function SyllabusVerificationPage() {
     if (isExecutingRef.current) return;
 
     isExecutingRef.current = true;
-    let isMounted = true;
+    const { file, courseCode } = pendingExtraction;
+    clearPendingExtraction();
+
+    let currentStep = 1;
+    let currentProgress = 15;
+    let stepInterval: NodeJS.Timeout | null = null;
+    let isCancelled = false;
+
+    const updateStepProgress = (step: number, progress: number, text: string) => {
+      if (isCancelled) return;
+      currentStep = step;
+      currentProgress = progress;
+      setExtractionProgress({
+        isExtracting: true,
+        step,
+        progress,
+        statusText: text,
+        error: null,
+      });
+    };
 
     const runExtraction = async () => {
-      const { file, courseCode } = pendingExtraction;
-      clearPendingExtraction();
-
       try {
-        if (isMounted) {
-          setExtractionProgress({
-            isExtracting: true,
-            step: 1,
-            progress: 15,
-            statusText: 'Uploading document to server...',
-            error: null,
-          });
-        }
+        updateStepProgress(1, 15, 'Validating Course Code...');
+
+        // Start gradual timer advancing step 1 -> step 2 -> step 3 -> step 4 (capped at 95%)
+        let targetProgress = 15;
+        stepInterval = setInterval(() => {
+          if (isCancelled) return;
+          targetProgress += 2;
+          if (targetProgress > 95) targetProgress = 95;
+
+          let step = 1;
+          let statusText = 'Validating Course Code...';
+          if (targetProgress < 25) {
+            step = 1;
+            statusText = 'Validating Course Code...';
+          } else if (targetProgress < 50) {
+            step = 2;
+            statusText = 'Reading & Uploading File...';
+          } else if (targetProgress < 75) {
+            step = 3;
+            statusText = 'Extracting Full Syllabus via GPT-4o...';
+          } else {
+            step = 4;
+            statusText = 'Structuring Units, Topics & Metadata...';
+          }
+
+          updateStepProgress(step, Math.round(targetProgress), statusText);
+        }, 400);
 
         const parseResult = await uploadAndExtractSyllabusBackend(
           file,
           courseCode,
-          (stageIndex, totalStages, message) => {
-            if (!isMounted) return;
-            const pct = Math.min(95, Math.round((stageIndex / totalStages) * 100));
-            setExtractionProgress({
-              isExtracting: true,
-              step: stageIndex,
-              progress: pct,
-              statusText: message || 'Processing syllabus on backend...',
-            });
+          (stageIndex, totalStages, message, percentage) => {
+            if (isCancelled) return;
+            if (percentage && percentage > targetProgress) {
+              targetProgress = percentage;
+              const step = Math.min(4, Math.max(1, stageIndex || Math.ceil((percentage / 100) * 4)));
+              updateStepProgress(step, Math.round(targetProgress), message || 'Extracting Syllabus...');
+            }
           }
         );
+
+        if (stepInterval) clearInterval(stepInterval);
 
         if (!parseResult.success || !parseResult.syllabus) {
           throw new Error('Failed to receive structured syllabus from backend server.');
         }
 
+        // Ensure steps 1 through 4 complete smoothly if backend returned fast
+        if (currentStep < 4) {
+          updateStepProgress(2, 45, 'Reading & Uploading File...');
+          await new Promise((r) => setTimeout(r, 200));
+          updateStepProgress(3, 70, 'Extracting Full Syllabus via GPT-4o...');
+          await new Promise((r) => setTimeout(r, 200));
+          updateStepProgress(4, 95, 'Structuring Units, Topics & Metadata...');
+          await new Promise((r) => setTimeout(r, 250));
+        }
+
         const extractedSyllabus = parseResult.syllabus;
         useSyllabusStore.getState().setSyllabus(extractedSyllabus);
 
-        const mapped = mapBackendToFullSyllabus(extractedSyllabus);
-        if (isMounted) {
+        const mapped = mapBackendToFullSyllabus(parseResult.rawJson || extractedSyllabus);
+        if (!isCancelled) {
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem('active_saved_syllabus', JSON.stringify(mapped));
+            } catch (e) {}
+          }
+
+          // 1. Populate and render the extracted content into blocks & pages FIRST
           setSyllabus(mapped);
           setHistory([mapped]);
+          loadedSourceRef.current = 'default';
+
+          // 2. Pause briefly to allow DOM to populate extracted content blocks
+          await new Promise((r) => setTimeout(r, 300));
+
+          // 3. Show Step 5 and 100% Done
           setExtractionProgress({
             isExtracting: true,
             step: 5,
             progress: 100,
-            statusText: 'Rendering Extracted Content for Review...',
+            statusText: 'Extraction Complete! Content rendered for review.',
           });
 
-          // Smoothly dismiss the progress bar after 1.2s of 100% completion display
+          // 4. Keep Step 5 and 100% visible on screen for 2.5s before dismissing
           setTimeout(() => {
-            if (isMounted) {
-              setExtractionProgress({ isExtracting: false });
-              isExecutingRef.current = false;
-            }
-          }, 1200);
+            setExtractionProgress({ isExtracting: false, step: 0, progress: 0, statusText: '', error: null });
+            isExecutingRef.current = false;
+          }, 2500);
         }
 
         toast.success(`Successfully extracted syllabus document!`);
       } catch (err: any) {
+        if (stepInterval) clearInterval(stepInterval);
         console.warn('Backend syllabus extraction notice:', err);
         isExecutingRef.current = false;
-        if (isMounted) {
+        if (!isCancelled) {
           setExtractionProgress({
             isExtracting: false,
+            step: 0,
+            progress: 0,
+            statusText: '',
             error: 'Failed to process syllabus. Please check your backend connection.',
           });
           toast.error('Failed to extract syllabus document. Please try again.');
@@ -544,145 +725,178 @@ export default function SyllabusVerificationPage() {
     runExtraction();
 
     return () => {
-      isMounted = false;
+      // Do not cancel running extraction on state re-render
     };
-  }, [pendingExtraction, extractionState.isExtracting, setExtractionProgress, clearPendingExtraction]);
+  }, [pendingExtraction, setExtractionProgress, clearPendingExtraction]);
+
+  const loadedSourceRef = useRef<string | null>(null);
 
   // Fetch from backend API if ?id= is passed in URL, else sync state dynamically with Zustand store
   useEffect(() => {
+    let isCancelled = false;
     const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const courseId = urlParams?.get('id');
+    const loadKey = courseId ? `id:${courseId}` : 'default';
+
+    // Skip loading from DB/localStorage if an extraction process is actively running or already completed for this key
+    if (extractionState.isExtracting || pendingExtraction?.file || isExecutingRef.current) {
+      return;
+    }
+
+    // Prevent repeated re-initialization for the same source key if already loaded
+    if (loadedSourceRef.current === loadKey) {
+      return;
+    }
+
+    const applyMappedSyllabus = (mappedData: FullSyllabusData, syncToStore = true) => {
+      if (isCancelled) return;
+      setSyllabus(mappedData);
+      setHistory([mappedData]);
+      loadedSourceRef.current = loadKey;
+
+      // Cache active syllabus in local storage
+      if (typeof window !== 'undefined' && mappedData.course?.code) {
+        try {
+          localStorage.setItem('active_saved_syllabus', JSON.stringify(mappedData));
+        } catch (e) {}
+      }
+
+      // Sync Zustand global store if valid content exists and code is different
+      if (syncToStore && mappedData.course?.code && mappedData.course?.code !== '') {
+        const storeState = useSyllabusStore.getState();
+        if (storeState.syllabus?.course?.code !== mappedData.course.code) {
+          if (storeState.setSyllabus) {
+            storeState.setSyllabus({
+              id: mappedData.id,
+              course: {
+                code: mappedData.course.code,
+                title: mappedData.course.title,
+                programme: mappedData.course.programme,
+                department: mappedData.course.department,
+                semester: mappedData.course.semester,
+                credits: String(mappedData.course.credits),
+                hours: {
+                  lecture: String(mappedData.course.lectureHours),
+                  tutorial: String(mappedData.course.tutorialHours),
+                  practical: String(mappedData.course.practicalHours),
+                  total: String(mappedData.course.totalHours),
+                },
+                prerequisites: mappedData.additionalInfo?.prerequisites || '',
+                objectives: mappedData.objectives,
+                outcomes: mappedData.outcomes,
+              },
+              units: mappedData.units.map((u, idx) => ({
+                unit_number: idx + 1,
+                title: u.title,
+                hours: String(u.learningHours),
+                topics: u.topics.map((t) => ({
+                  name: t.title,
+                  subtopics: t.subtopics.map((s) => (typeof s === 'string' ? s : s.title)),
+                })),
+              })),
+              textbooks: mappedData.textbooks,
+              reference_books: mappedData.referenceBooks,
+              assessment: mappedData.assessment || {},
+              additional_information: mappedData.additionalInfo || {},
+            });
+          }
+        }
+      }
+    };
 
     if (courseId) {
-      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      fetch(`${API_BASE_URL}/api/syllabus/${encodeURIComponent(courseId)}`)
-        .then((res) => (res.ok ? res.json() : null))
+      syllabusApi.getSyllabus(courseId)
         .then((data) => {
-          if (data) {
+          if (data && !isCancelled) {
             const mapped = mapBackendToFullSyllabus(data);
-            setSyllabus(mapped);
-            setHistory([mapped]);
+            applyMappedSyllabus(mapped);
           }
         })
         .catch((err) => {
           console.warn("Could not fetch syllabus by ID for verification editor:", err);
         });
-    } else if (
+      return;
+    }
+
+    // 1. Check active Zustand store if valid content exists
+    if (
       storeSyllabus &&
       storeSyllabus.course &&
-      (storeSyllabus.course.code || storeSyllabus.course.title || (storeSyllabus.units && storeSyllabus.units.length > 0))
+      ((storeSyllabus.units && storeSyllabus.units.length > 0) || (storeSyllabus.course.title && storeSyllabus.course.title.trim() !== ''))
     ) {
-      const mapped: FullSyllabusData = {
-        id: storeSyllabus.id || "course_dynamic",
-        isCodeMismatch: storeSyllabus.isCodeMismatch,
-        userCourseCode: storeSyllabus.userCourseCode,
-        pdfCourseCode: storeSyllabus.pdfCourseCode,
-        mismatchWarning: storeSyllabus.mismatchWarning,
-        course: {
-          code: storeSyllabus.course.code || "",
-          title: storeSyllabus.course.title || "",
-          programme: storeSyllabus.course.programme || "",
-          department: storeSyllabus.course.department || "",
-          regulation: "2021",
-          semester: storeSyllabus.course.semester || "",
-          credits: Number(storeSyllabus.course.credits) || 0,
-          category: "Professional Core (PC)",
-          lectureHours: Number(storeSyllabus.course.hours?.lecture) || Number((storeSyllabus.course as any)?.theoryHours) || (storeSyllabus.units ? storeSyllabus.units.reduce((s: number, u: any) => s + (parseFloat(u.hours) || 9), 0) : 45),
-          tutorialHours: Number(storeSyllabus.course.hours?.tutorial) || 0,
-          practicalHours: Number(storeSyllabus.course.hours?.practical) || Number((storeSyllabus.course as any)?.practicalHours) || ((storeSyllabus.labExperiments || (storeSyllabus as any).experiments || []).length > 0 ? 30 : 0),
-          totalHours: Number(storeSyllabus.course.hours?.total) || Number((storeSyllabus.course as any)?.totalHours) || Number(storeSyllabus.course.hours) || 75,
-          status: "In Review"
-        },
-        objectives: storeSyllabus.course.objectives || [],
-        outcomes: storeSyllabus.course.outcomes || [],
-        units: (storeSyllabus.units || []).map((u: UnitItem, uIdx: number) => ({
-          id: `u${uIdx + 1}`,
-          title: u.title || `Unit ${u.unit_number}`,
-          description: `Detailed study of ${u.title || `Unit ${u.unit_number}`}`,
-          learningHours: parseFloat(u.hours) || 9.0,
-          topics: (u.topics || []).map((t: TopicItem, tIdx: number) => ({
-            id: `t${uIdx + 1}_${tIdx + 1}`,
-            title: t.name || `Topic ${tIdx + 1}`,
-            description: `Core principles and concepts of ${t.name || `Topic ${tIdx + 1}`}`,
-            difficulty: "Intermediate" as const,
-            importance: "High" as const,
-            bloomLevel: "Understand" as const,
-            learningHours: Math.max(1, (parseFloat(u.hours) || 9) / Math.max(1, (t.subtopics || []).length || 1)),
-            confidence: 90.0,
-            subtopics: (t.subtopics || []).map((st: any, stIdx: number) => ({
-              id: `s${uIdx + 1}_${tIdx + 1}_${stIdx + 1}`,
-              title: typeof st === 'string' ? st : (st as any).title || `Subtopic ${stIdx + 1}`,
-              learningHours: 1.0,
-              duration: "45 mins",
-              bloom: "Understand"
-            })),
-            skills: [t.name || "Curriculum Unit"],
-            keywords: [t.name || "Topic"],
-            hourAllocationReason: "Pacing aligned with course learning outcomes."
-          }))
-        })),
-        textbooks: storeSyllabus.textbooks || [],
-        referenceBooks: storeSyllabus.reference_books || [],
-        labExperiments: ((storeSyllabus.labExperiments || (storeSyllabus as any).experiments || []) as any[]).map((expItem: any, idx: number) => {
-          if (typeof expItem === 'string') {
-            return {
-              id: `exp_${idx + 1}`,
-              expNumber: `Exp ${idx + 1}`,
-              title: expItem,
-              description: `Practical implementation exercise: ${expItem}`,
-              hours: 0,
-              softwareTools: '',
-              mappedUnit: '',
-              bloomLevel: '' as any
-            };
-          } else {
-            return {
-              id: expItem.id || `exp_${idx + 1}`,
-              expNumber: expItem.expNumber || expItem.number || `Exp ${idx + 1}`,
-              title: expItem.title || expItem.name || `Experiment ${idx + 1}`,
-              description: expItem.description || `Practical implementation exercise`,
-              hours: expItem.hours || 0,
-              softwareTools: expItem.softwareTools || expItem.tools || '',
-              mappedUnit: expItem.mappedUnit || '',
-              bloomLevel: expItem.bloomLevel || ''
-            };
-          }
-        }),
-        assessment: [
-          { id: 'ass_1', component: 'Continuous Internal Assessment (CIA)', weightagePercent: 40, maxMarks: 40, evaluationType: 'Internal' },
-          { id: 'ass_2', component: 'End Semester Examination', weightagePercent: 60, maxMarks: 60, evaluationType: 'External' }
-        ],
-        additionalInfo: {
-          notes: "",
-          prerequisites: storeSyllabus.course.prerequisites || "",
-          softwareRequirements: "",
-          labRequirements: "",
-          remarks: ""
-        }
-      };
-      setSyllabus(mapped);
-      setHistory([mapped]);
-    } else {
-      if (typeof window !== 'undefined') {
-        try {
-          const cachedStr = localStorage.getItem('active_saved_syllabus');
-          if (cachedStr) {
-            const cachedJson = JSON.parse(cachedStr);
-            if (cachedJson && (cachedJson.course?.code || cachedJson.course?.title || (cachedJson.units && cachedJson.units.length > 0))) {
-              const mapped = mapBackendToFullSyllabus(cachedJson);
-              setSyllabus(mapped);
-              setHistory([mapped]);
+      const mapped = mapBackendToFullSyllabus(storeSyllabus);
+      if (mapped.units.length > 0 || (mapped.course.title && mapped.course.title !== 'Untitled Syllabus')) {
+        applyMappedSyllabus(mapped, false);
+        return;
+      }
+    }
+
+    // 2. Check localStorage cache for active extracted syllabus
+    let loadedFromCache = false;
+    if (typeof window !== 'undefined') {
+      try {
+        const cachedStr = localStorage.getItem('active_saved_syllabus');
+        if (cachedStr) {
+          const cachedJson = JSON.parse(cachedStr);
+          if (cachedJson && (cachedJson.course?.code || cachedJson.course?.title || (cachedJson.units && cachedJson.units.length > 0))) {
+            const mapped = mapBackendToFullSyllabus(cachedJson);
+            if (mapped.units.length > 0 || (mapped.course.title && mapped.course.title !== 'Untitled Syllabus')) {
+              applyMappedSyllabus(mapped, false);
+              loadedFromCache = true;
               return;
             }
           }
-        } catch (e) {
-          console.warn("Could not load cached syllabus from localStorage:", e);
         }
+      } catch (e) {
+        console.warn("Could not load cached syllabus from localStorage:", e);
       }
-      setSyllabus(emptySyllabusData);
-      setHistory([emptySyllabusData]);
     }
-  }, [storeSyllabus]);
+
+    if (!loadedFromCache) {
+      // 3. Fallback: Fetch latest available syllabus from repository DB
+      syllabusApi.getSyllabusList({ limit: 1 })
+        .then((resData) => {
+          if (isCancelled) return;
+          const items = Array.isArray(resData)
+            ? resData
+            : Array.isArray(resData?.items)
+            ? resData.items
+            : [];
+          if (items.length > 0) {
+            const latestItem = items[0];
+            const latestId = latestItem.id || latestItem.syllabusId || latestItem.courseCode || latestItem.code;
+            if (latestId) {
+              syllabusApi.getSyllabus(latestId)
+                .then((fullData) => {
+                  if (fullData && !isCancelled) {
+                    const mapped = mapBackendToFullSyllabus(fullData);
+                    applyMappedSyllabus(mapped);
+                  } else if (latestItem && !isCancelled) {
+                    const mapped = mapBackendToFullSyllabus(latestItem);
+                    applyMappedSyllabus(mapped);
+                  }
+                })
+                .catch(() => {
+                  if (latestItem && !isCancelled) {
+                    const mapped = mapBackendToFullSyllabus(latestItem);
+                    applyMappedSyllabus(mapped);
+                  }
+                });
+              return;
+            }
+          }
+          applyMappedSyllabus(emptySyllabusData, false);
+        })
+        .catch((err) => {
+          console.warn("Could not fetch latest syllabus fallback:", err);
+          applyMappedSyllabus(emptySyllabusData, false);
+        });
+    }
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [pendingExtraction]);
   const [historyIndex, setHistoryIndex] = useState<number>(0);
   const [isDirty, setIsDirty] = useState<boolean>(false);
 
@@ -723,6 +937,13 @@ export default function SyllabusVerificationPage() {
   const updateSyllabus = useCallback((updater: (prev: FullSyllabusData) => FullSyllabusData) => {
     setSyllabus((prev) => {
       const updated = updater(prev);
+
+      // Persist to local storage cache so reloads preserve draft edits
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('active_saved_syllabus', JSON.stringify(updated));
+        } catch (e) {}
+      }
 
       // Push to history
       setHistory((prevHistory) => {
@@ -1084,7 +1305,10 @@ export default function SyllabusVerificationPage() {
 
     try {
       const { saveVerifiedSyllabus } = await import('@/lib/api-client');
-      await saveVerifiedSyllabus(courseId, syllabusToSave);
+      const saveRes = await saveVerifiedSyllabus(courseId, syllabusToSave);
+      if (saveRes && saveRes.jobId) {
+        setCurrentJobId(saveRes.jobId);
+      }
 
       // Persist to local storage cache as well for immediate frontend reload capability
       if (typeof window !== 'undefined') {
@@ -1447,8 +1671,8 @@ export default function SyllabusVerificationPage() {
                 { step: 4, label: 'Structuring Units, Topics & Metadata...' },
                 { step: 5, label: 'Rendering Extracted Content for Review...' }
               ].map((item) => {
-                const isDone = extractionState.step > item.step;
-                const isCurrent = extractionState.step === item.step;
+                const isDone = extractionState.step > item.step || (item.step === 5 && extractionState.step === 5 && extractionState.progress === 100);
+                const isCurrent = extractionState.step === item.step && !isDone;
                 return (
                   <div
                     key={item.step}
@@ -1637,11 +1861,52 @@ export default function SyllabusVerificationPage() {
             ref={mainContentRef}
             className="flex-1 min-w-0 w-full lg:h-full lg:max-h-[calc(100vh-140px)] lg:overflow-y-auto space-y-6 pr-2 custom-sidebar-scrollbar scroll-smooth"
           >
-            
+            {/* Top Toolbar: Verification Tabs & AI Status Widget */}
+            <div className="space-y-4 relative z-50">
+              <div className="flex flex-wrap items-center justify-between gap-3 p-1.5 rounded-2xl bg-slate-900/90 border border-slate-800 backdrop-blur-md relative z-50">
+                <div className="flex flex-wrap items-center gap-1">
+                  {[
+                    { id: 'general', label: 'General', icon: FileText },
+                    { id: 'units', label: 'Units & Topics', icon: Layers },
+                    { id: 'cos', label: 'COs', icon: Award },
+                    { id: 'copo', label: 'CO-PO', icon: SlidersHorizontal },
+                    { id: 'references', label: 'References', icon: BookMarked },
+                    { id: 'json', label: 'Raw JSON', icon: FileCode }
+                  ].map((tab) => {
+                    const Icon = tab.icon;
+                    const isActive = activeTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id as any)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                          isActive
+                            ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-md shadow-cyan-500/20'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                        }`}
+                      >
+                        <Icon size={14} className={isActive ? 'text-white' : 'text-slate-400'} />
+                        <span>{tab.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="pr-1 relative z-50">
+                  <NotificationCenter />
+                </div>
+              </div>
+
+              {/* Background AI Pipeline Status Widget */}
+              <AIProcessingStatus jobId={currentJobId} courseId={syllabus.course.code} />
+            </div>
+
             {/* ================================================================ */}
-            {/* SECTION 1: COURSE DETAILS */}
+            {/* TAB 1: GENERAL (COURSE DETAILS & OBJECTIVES) */}
             {/* ================================================================ */}
-            <section id="sec-course-details" className="scroll-mt-24">
+            {(activeTab === 'general' || activeTab === 'json') && (
+              <>
+                <section id="sec-course-details" className="scroll-mt-24">
               <motion.div
                 initial={{ opacity: 0, y: 15 }}
                 whileInView={{ opacity: 1, y: 0 }}
@@ -1966,10 +2231,13 @@ export default function SyllabusVerificationPage() {
                 </div>
               </motion.div>
             </section>
+              </>
+            )}
 
             {/* ================================================================ */}
-            {/* SECTION 3: COURSE OUTCOMES */}
+            {/* TAB 4: COURSE OUTCOMES (COs) */}
             {/* ================================================================ */}
+            {(activeTab === 'cos' || activeTab === 'json') && (
             <section id="sec-outcomes" className="scroll-mt-24">
               <motion.div
                 initial={{ opacity: 0, y: 15 }}
@@ -2082,10 +2350,15 @@ export default function SyllabusVerificationPage() {
                 })}
                 </div>
               </motion.div>
-            </section>            {/* ================================================================ */}
-            {/* SECTION 4: EXTRACTED UNITS & TOPICS (CORE EDITOR SECTION) */}
+            </section>
+            )}
+
             {/* ================================================================ */}
-            <section id="sec-units" className="scroll-mt-24">
+            {/* TAB 2: UNITS & TOPICS */}
+            {/* ================================================================ */}
+            {(activeTab === 'units' || activeTab === 'json') && (
+              <>
+                <section id="sec-units" className="scroll-mt-24">
               <motion.div
                 initial={{ opacity: 0, y: 15 }}
                 whileInView={{ opacity: 1, y: 0 }}
@@ -2834,11 +3107,15 @@ export default function SyllabusVerificationPage() {
                 )}
               </motion.div>
             </section>
+              </>
+            )}
 
             {/* ================================================================ */}
-            {/* SECTION 6: TEXTBOOKS */}
+            {/* TAB 6: REFERENCES (TEXTBOOKS & REFERENCE BOOKS) */}
             {/* ================================================================ */}
-            <section id="sec-textbooks" className="scroll-mt-24">
+            {(activeTab === 'references' || activeTab === 'json') && (
+              <>
+                <section id="sec-textbooks" className="scroll-mt-24">
               <motion.div
                 initial={{ opacity: 0, y: 15 }}
                 whileInView={{ opacity: 1, y: 0 }}
@@ -3220,11 +3497,61 @@ export default function SyllabusVerificationPage() {
                 </div>
               </motion.div>
             </section>
+              </>
+            )}
+
+            {/* ================================================================ */}
+            {/* TAB 7: RAW JSON TAB */}
+            {/* ================================================================ */}
+            {(activeTab === 'json') && (
+              <section id="sec-raw-json" className="scroll-mt-24">
+                <motion.div
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-3xl border border-slate-800 bg-slate-950 p-6 md:p-8 shadow-xl relative overflow-hidden"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-2xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                        <FileText size={20} />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-black tracking-tight text-slate-100">7. Raw JSON View & Direct Edit</h2>
+                        <p className="text-xs text-slate-400">Directly inspect and modify the raw syllabus document state.</p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(JSON.stringify(syllabus, null, 2));
+                        toast.success("Copied JSON payload to clipboard!");
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition"
+                    >
+                      Copy JSON
+                    </button>
+                  </div>
+
+                  <textarea
+                    rows={22}
+                    value={JSON.stringify(syllabus, null, 2)}
+                    onChange={(e) => {
+                      try {
+                        const parsed = JSON.parse(e.target.value);
+                        setSyllabus(parsed);
+                      } catch (err) {}
+                    }}
+                    className="w-full rounded-2xl border border-slate-800 bg-slate-900/90 p-4 font-mono text-xs text-cyan-300 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+                </motion.div>
+              </section>
+            )}
 
             {/* ================================================================== */}
             {/* SECTION 9: CO-PO MAPPING MATRIX */}
             {/* ================================================================== */}
-            <section id="sec-copo-mapping" className="scroll-mt-24">
+            {(activeTab === 'copo' || activeTab === 'cos' || activeTab === 'json') && (
+              <section id="sec-copo-mapping" className="scroll-mt-24">
               <motion.div
                 initial={{ opacity: 0, y: 15 }}
                 whileInView={{ opacity: 1, y: 0 }}
@@ -3415,6 +3742,7 @@ export default function SyllabusVerificationPage() {
                 </div>
               </motion.div>
             </section>
+            )}
 
             {/* ================================================================== */}
             {/* SECTION 10: STRUCTURED CATEGORY TABLES & MATRICES */}
@@ -3679,7 +4007,7 @@ export default function SyllabusVerificationPage() {
                 <div className="relative mb-5 flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-400 via-purple-500 to-amber-400 p-0.5 shadow-[0_0_25px_rgba(6,182,212,0.5)]">
                   <div className="w-full h-full rounded-[14px] bg-slate-950/90 backdrop-blur-md flex items-center justify-center">
                     <CheckCircle2 size={32} className="text-cyan-300 animate-pulse" />
-                    <Sparkles size={16} className="absolute -top-1 -right-1 text-amber-300 animate-spin" style={{ animationDuration: '6s' }} />
+                    <Sparkles size={16} className="absolute -top-1 -right-1 text-amber-300 animate-spin verification-spin-6s" />
                   </div>
                 </div>
 

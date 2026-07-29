@@ -1,3 +1,4 @@
+import './styles/status-badge.css';
 import React from 'react';
 import { Clock3 } from 'lucide-react';
 

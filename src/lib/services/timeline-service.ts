@@ -5,16 +5,15 @@
  * per topic within a unit, weighted by conceptual complexity & subtopic depth.
  * 
  * Priority:
- *   1. NEXT_PUBLIC_OPENAI_API_KEY  → Direct OpenAI call
- *   2. NEXT_PUBLIC_NVIDIA_API_KEY  → NVIDIA NIM endpoint (OpenAI-compatible)
+ *   1. OPENAI_API_KEY  → Direct OpenAI call
+ *   2. NVIDIA_API_KEY  → NVIDIA NIM endpoint (OpenAI-compatible)
  *   3. Backend proxy at /api/timeline/generate-topics
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { client, timelineApi } from '@/lib/api';
+
 const OPENAI_API_KEY = process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
 const NVIDIA_API_KEY = process.env.NEXT_PUBLIC_NVIDIA_API_KEY || '';
-
-// NVIDIA NIM base URL (OpenAI-compatible)
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
 
 export interface TopicAllocationInput {
@@ -112,14 +111,12 @@ function parseAndValidateResponse(
   topics: TopicAllocationInput[],
   totalHours: number
 ): TopicAllocationResult {
-  // Strip any markdown code fences
   const cleaned = rawText.replace(/```json\n?|```/g, '').trim();
 
   let parsed: any;
   try {
     parsed = JSON.parse(cleaned);
   } catch {
-    // Attempt to extract JSON from mixed text
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('LLM returned non-JSON response');
     parsed = JSON.parse(jsonMatch[0]);
@@ -128,24 +125,20 @@ function parseAndValidateResponse(
   const rawAllocations: Record<string, number> = parsed.allocations || {};
   const rationale: string = parsed.rationale || 'Allocated by complexity.';
 
-  // Map "Topic N" keys back to topic IDs
   const allocations: Record<string, number> = {};
   topics.forEach((topic, i) => {
     const key = `Topic ${i + 1}`;
     allocations[topic.id] = parseFloat(String(rawAllocations[key] || 0)) || 0;
   });
 
-  // Validate total & rescale if needed
   const rawTotal = Object.values(allocations).reduce((s, v) => s + v, 0);
   const tolerance = 0.1;
 
   if (Math.abs(rawTotal - totalHours) > tolerance && rawTotal > 0) {
-    // Proportional rescaling
     const scale = totalHours / rawTotal;
     topics.forEach((topic) => {
-      allocations[topic.id] = Math.round(allocations[topic.id] * scale * 4) / 4; // round to quarter-hour
+      allocations[topic.id] = Math.round(allocations[topic.id] * scale * 4) / 4;
     });
-    // Fix any rounding drift on last item
     const newTotal = Object.values(allocations).reduce((s, v) => s + v, 0);
     const drift = Math.round((totalHours - newTotal) * 4) / 4;
     if (Math.abs(drift) > 0 && topics.length > 0) {
@@ -167,27 +160,21 @@ async function callOpenAI(
   prompt: string,
   apiKey: string
 ): Promise<string> {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
+  const data = await client.post(
+    'https://api.openai.com/v1/chat/completions',
+    {
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
       max_tokens: 800,
       response_format: { type: 'json_object' },
-    }),
-  });
+    },
+    {
+      authToken: apiKey,
+      skipBaseUrl: true,
+    }
+  );
 
-  if (!res.ok) {
-    const err = await res.text().catch(() => '');
-    throw new Error(`OpenAI API error (${res.status}): ${err}`);
-  }
-
-  const data = await res.json();
   return data.choices?.[0]?.message?.content || '';
 }
 
@@ -198,13 +185,9 @@ async function callNvidiaAPI(
   prompt: string,
   apiKey: string
 ): Promise<string> {
-  const res = await fetch(`${NVIDIA_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
+  const data = await client.post(
+    `${NVIDIA_BASE_URL}/chat/completions`,
+    {
       model: 'meta/llama-3.3-70b-instruct',
       messages: [
         {
@@ -216,15 +199,13 @@ async function callNvidiaAPI(
       temperature: 0.3,
       max_tokens: 800,
       stream: false,
-    }),
-  });
+    },
+    {
+      authToken: apiKey,
+      skipBaseUrl: true,
+    }
+  );
 
-  if (!res.ok) {
-    const err = await res.text().catch(() => '');
-    throw new Error(`NVIDIA API error (${res.status}): ${err}`);
-  }
-
-  const data = await res.json();
   return data.choices?.[0]?.message?.content || '';
 }
 
@@ -236,24 +217,12 @@ async function callBackendProxy(
   totalHours: number,
   topics: TopicAllocationInput[]
 ): Promise<TopicAllocationResult> {
-  const res = await fetch(`${API_BASE_URL}/api/timeline/generate-topics`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ unitTitle, totalHours, topics }),
-  });
+  const data = await timelineApi.generateTopicsProxy(unitTitle, totalHours, topics);
 
-  if (!res.ok) {
-    throw new Error(`Backend proxy error (${res.status})`);
-  }
-
-  const data = await res.json();
-
-  // If backend returns pre-structured result, use it directly
   if (data.allocations && typeof data.allocations === 'object') {
     return data as TopicAllocationResult;
   }
 
-  // If backend returns raw LLM text, parse it ourselves
   if (data.rawText || data.content) {
     return parseAndValidateResponse(data.rawText || data.content, topics, totalHours);
   }
@@ -263,10 +232,6 @@ async function callBackendProxy(
 
 /**
  * Main entry point — generates AI-driven topic time allocations for a unit.
- *
- * @param unitTitle   - Title of the unit (e.g. "Unit 3: Neural Networks")
- * @param totalHours  - Total teaching hours available for this unit
- * @param topics      - Array of topics with subtopics to allocate time for
  */
 export async function generateTopicTimeline(
   unitTitle: string,

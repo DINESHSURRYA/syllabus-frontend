@@ -118,19 +118,43 @@ export function normalizeBackendResponse(raw: any): SyllabusData {
     })
     .filter(Boolean);
 
-  const units = normalizeUnits(raw.units || c.units || []);
-  const rawTextbooks = Array.isArray(raw.textbooks) ? raw.textbooks : Array.isArray(c.textbooks) ? c.textbooks : Array.isArray(raw.references) ? raw.references : [];
-  const textbooks = rawTextbooks.map((b: any) => sanitizeText(typeof b === 'string' ? b : b?.title || String(b))).filter(Boolean);
+  const units = normalizeUnits(raw.units || c.units || raw.unitsAndTopics || c.unitsAndTopics || []);
+  const rawTextbooks = Array.isArray(raw.textBooks)
+    ? raw.textBooks
+    : Array.isArray(raw.textbooks)
+    ? raw.textbooks
+    : Array.isArray(c.textBooks)
+    ? c.textBooks
+    : Array.isArray(c.textbooks)
+    ? c.textbooks
+    : [];
+  const textbooks = rawTextbooks.map((b: any) => sanitizeText(typeof b === 'string' ? b : b?.title || b?.name || String(b))).filter(Boolean);
 
-  const rawRefBooks = Array.isArray(raw.reference_books) ? raw.reference_books : Array.isArray(c.reference_books) ? c.reference_books : Array.isArray(raw.references) ? raw.references : [];
-  const reference_books = rawRefBooks.map((r: any) => sanitizeText(typeof r === 'string' ? r : r?.title || String(r))).filter(Boolean);
+  const rawRefBooks = Array.isArray(raw.references)
+    ? raw.references
+    : Array.isArray(raw.referenceBooks)
+    ? raw.referenceBooks
+    : Array.isArray(raw.reference_books)
+    ? raw.reference_books
+    : Array.isArray(c.references)
+    ? c.references
+    : Array.isArray(c.referenceBooks)
+    ? c.referenceBooks
+    : Array.isArray(c.reference_books)
+    ? c.reference_books
+    : [];
+  const reference_books = rawRefBooks.map((r: any) => sanitizeText(typeof r === 'string' ? r : r?.title || r?.name || String(r))).filter(Boolean);
 
-  const rawExps = Array.isArray(raw.labExperiments)
+  const rawExps = Array.isArray(raw.laboratoryExperiments)
+    ? raw.laboratoryExperiments
+    : Array.isArray(raw.labExperiments)
     ? raw.labExperiments
     : Array.isArray(raw.experiments)
     ? raw.experiments
     : Array.isArray(raw.lab_experiments)
     ? raw.lab_experiments
+    : Array.isArray(c.laboratoryExperiments)
+    ? c.laboratoryExperiments
     : Array.isArray(c.labExperiments)
     ? c.labExperiments
     : Array.isArray(c.experiments)

@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -23,13 +23,8 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
-import {
-  useMCQStore,
-  Assessment,
-  MCQQuestion,
-  ExamAttempt,
-  BloomLevel
-} from '@/lib/mcq-store';
+import { useMCQStore } from '@/stores';
+import { Assessment, MCQQuestion, ExamAttempt, BloomLevel } from '@/types';
 import { toast } from 'sonner';
 
 export default function CandidateExamPortalPage() {
@@ -212,6 +207,8 @@ export default function CandidateExamPortalPage() {
     const attemptId = `attempt-${Date.now()}`;
     const newAttempt: ExamAttempt = {
       id: attemptId,
+      attemptId,
+      status: 'Submitted',
       assessmentId: targetAssessment.id,
       assessmentTitle: targetAssessment.title,
       candidateName,

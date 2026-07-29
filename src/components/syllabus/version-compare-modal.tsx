@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/version-compare-modal.css';
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, GitCompare, ArrowLeftRight, CheckCircle2, RotateCcw, Calendar, User, Trash2 } from 'lucide-react';

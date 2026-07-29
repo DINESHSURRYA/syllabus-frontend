@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -39,7 +39,8 @@ import {
 import { AppShell } from '@/components/layout/app-shell';
 import { AnalyticsCard } from '@/components/analytics-card';
 import { Button } from '@/components/ui/button';
-import { useMCQStore, BLOOM_LEVEL_DESCRIPTIONS, BloomLevel } from '@/lib/mcq-store';
+import { useMCQStore, BLOOM_LEVEL_DESCRIPTIONS } from '@/stores';
+import { BloomLevel } from '@/types';
 
 export default function MCQAnalyticsPage() {
   const { questionSets, assessments, attempts, generationLogs } = useMCQStore();
@@ -251,9 +252,11 @@ export default function MCQAnalyticsPage() {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-white/5 text-xs">
                 {attempts.map((att) => {
-                  const isHighRisk = att.tabSwitchCount >= 3;
+                  const switches = att.tabSwitchCount || att.tabSwitches || 0;
+                  const isHighRisk = switches >= 3;
+                  const endTimeStr = att.endTime || att.submittedAt || new Date().toISOString();
                   return (
-                    <tr key={att.id} className="hover:bg-slate-50 dark:hover:bg-white/5">
+                    <tr key={att.id || att.attemptId} className="hover:bg-slate-50 dark:hover:bg-white/5">
                       <td className="p-3.5 font-bold text-slate-900 dark:text-white">
                         <div>
                           <p>{att.candidateName}</p>
@@ -261,7 +264,7 @@ export default function MCQAnalyticsPage() {
                         </div>
                       </td>
                       <td className="p-3.5 text-slate-700 dark:text-slate-300">
-                        {att.assessmentTitle}
+                        {att.assessmentTitle || att.assessmentId}
                       </td>
                       <td className="p-3.5 font-mono font-bold">
                         <span
@@ -271,11 +274,11 @@ export default function MCQAnalyticsPage() {
                               : 'bg-emerald-500/20 text-emerald-500'
                           }`}
                         >
-                          {att.tabSwitchCount} Tab Switches
+                          {switches} Tab Switches
                         </span>
                       </td>
                       <td className="p-3.5 font-mono font-bold text-cyan-500">
-                        {att.percentage}% ({att.score}/{att.totalMarks})
+                        {att.percentage || 0}% ({att.score || 0}/{att.totalMarks || 100})
                       </td>
                       <td className="p-3.5 font-mono font-bold">
                         {isHighRisk ? (
@@ -289,7 +292,7 @@ export default function MCQAnalyticsPage() {
                         )}
                       </td>
                       <td className="p-3.5 font-mono text-slate-400 text-right">
-                        {new Date(att.endTime).toLocaleTimeString()}
+                        {new Date(endTimeStr).toLocaleTimeString()}
                       </td>
                     </tr>
                   );

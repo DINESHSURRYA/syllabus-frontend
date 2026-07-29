@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/WeeklyScheduleTab.css';
 import React from "react";
 import { Calendar, BookOpen, Layers, CheckSquare } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";

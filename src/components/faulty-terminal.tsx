@@ -1,8 +1,7 @@
 "use client";
-
+import './styles/faulty-terminal.css';
 import { Renderer, Program, Mesh, Color, Triangle } from 'ogl';
 import React, { useEffect, useRef, useMemo, useCallback } from 'react';
-import './faulty-terminal.css';
 
 const vertexShader = `
 attribute vec2 position;

@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, Type, TypeIcon as FontIcon, Eye, Sun, Check, Wand2, CheckCircle2, Layers } from 'lucide-react';
@@ -8,7 +8,7 @@ import { AppShell } from '@/components/layout/app-shell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useTheme, FontSize, FontFamily } from '@/components/providers/theme-provider';
-import { useGuideStore } from '@/lib/guide-store';
+import { useGuideStore } from '@/stores';
 import { BrainCircuit, Cpu, ShieldCheck, GraduationCap, RotateCcw } from 'lucide-react';
 
 export default function SettingsPage() {

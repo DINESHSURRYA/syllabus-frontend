@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import { useEffect, useCallback, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -10,7 +10,7 @@ import { ProcessingTimeline } from '@/components/processing-timeline';
 import { Button } from '@/components/ui/button';
 import { processSyllabus, getProcessingStatus } from '@/lib/api-client';
 import { AI_PROCESSING_PROMPT, STAGE_2_STATUS_MESSAGES } from '@/lib/constants';
-import { useSyllabusStore } from '@/lib/store';
+import { useSyllabusStore } from '@/stores';
 import { normalizeBackendResponse } from '@/lib/normalizer';
 
 export default function ProcessingPage() {

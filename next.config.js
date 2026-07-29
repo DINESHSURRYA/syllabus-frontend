@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const EVALUATOR_API_URL =
-  process.env.NEXT_PUBLIC_EVALUATOR_API_URL || 'http://10.112.19.234:8000';
+  process.env.NEXT_PUBLIC_EVALUATOR_API_URL || 'http://localhost:8000';
 
 const nextConfig = {
   reactStrictMode: true,

@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/editable-course-card.css';
 import { motion } from 'framer-motion';
 import { Edit3, Save, X } from 'lucide-react';
 import { useState } from 'react';

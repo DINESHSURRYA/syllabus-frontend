@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import React, { useState } from 'react';
 import {
   FileCode2,
@@ -17,7 +17,7 @@ import {
   Filter,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useEvaluatorStore, AuditLogEntry } from '@/lib/evaluator-store';
+import { useEvaluatorStore, AuditLogEntry } from '@/stores';
 import {
   EvaluatorPageHeader,
   EvaluatorEmptyState,

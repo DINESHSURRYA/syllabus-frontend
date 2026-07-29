@@ -1,9 +1,10 @@
 "use client";
-
+import './styles/TimePlannerTab.css';
 import React, { useState } from "react";
 import { Clock, Sliders, Calendar, CheckCircle, RefreshCw } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { curriculumApi, client, API } from "@/lib/api";
 
 interface TimePlannerTabProps {
   courseId?: string;
@@ -20,14 +21,8 @@ export const TimePlannerTab: React.FC<TimePlannerTabProps> = ({ courseId, units 
   const handleCalculateSchedule = async () => {
     setIsCalculating(true);
     try {
-      const response = await fetch(
-        `http://localhost:8000/api/ekg/${courseId || "default"}/time-plan?target_hours=${customHours}&period_duration_mins=${periodDuration}`,
-        { method: "POST" }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setSchedule(data.schedule || []);
-      }
+      const data = await client.post(API.curriculum.ekgTimePlan(courseId || "default", customHours, periodDuration));
+      setSchedule(data.schedule || []);
     } catch (err) {
       console.warn("Using fallback client schedule calculation", err);
       // Fallback schedule generation

@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/app-shell.css';
 import React, { useState, useEffect, ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -30,14 +30,15 @@ import {
   FileCode2,
   FileText,
   Stethoscope,
+  HelpCircle,
   LucideIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { useTheme } from '@/components/providers/theme-provider';
 import { ExtractionNotificationPopup } from '@/components/extraction-notification';
 import { GuideAssistantWidget } from '@/components/guide/guide-assistant-widget';
-import { useSyllabusStore } from '@/lib/store';
-import { useGuideStore } from '@/lib/guide-store';
+import { useSyllabusStore, useGuideStore } from '@/stores';
 
 // Module 1: Main Studio Navigation Items
 const mainNavItems = [
@@ -71,7 +72,14 @@ const evaluatorNavItems = [
   { href: '/evaluator/audit-logs', label: 'LLM Audit Logs', icon: FileCode2, leadText: 'Inspect prompts, JSON & metrics' },
 ];
 
-type ModuleType = 'studio' | 'mcq' | 'evaluator';
+// Module 4: Doubts Navigation Items
+const doubtsNavItems = [
+  { href: '/doubts', label: 'AI Doubts Resolver', icon: HelpCircle, leadText: 'Ask questions & get instant AI explanations' },
+  { href: '/doubts/history', label: 'Doubts History', icon: ScrollText, leadText: 'Review past asked questions & solutions' },
+  { href: '/doubts/topics', label: 'Topic-wise Q&A', icon: BookOpen, leadText: 'Explore doubts organized by course topic' },
+];
+
+type ModuleType = 'studio' | 'mcq' | 'evaluator' | 'doubts';
 
 interface ModuleConfig {
   id: ModuleType;
@@ -79,7 +87,7 @@ interface ModuleConfig {
   shortLabel: string;
   icon: LucideIcon;
   badge: string;
-  colorTheme: 'cyan' | 'emerald' | 'indigo';
+  colorTheme: 'cyan' | 'emerald' | 'indigo' | 'amber';
   defaultHref: string;
   description: string;
   items: Array<{ href: string; label: string; icon: LucideIcon; leadText: string }>;
@@ -118,6 +126,17 @@ const modules: ModuleConfig[] = [
     defaultHref: '/evaluator/upload',
     description: 'Ingestion, Audio Interview & Audit Logs',
     items: evaluatorNavItems
+  },
+  {
+    id: 'doubts',
+    label: 'DOUBTS & Q&A',
+    shortLabel: 'Doubts',
+    icon: HelpCircle,
+    badge: 'ASK',
+    colorTheme: 'amber',
+    defaultHref: '/doubts',
+    description: 'AI Doubts Resolver & Subject Q&A',
+    items: doubtsNavItems
   }
 ];
 
@@ -128,6 +147,9 @@ const getModuleFromPath = (pathname: string): ModuleType => {
   if (pathname.startsWith('/evaluator')) {
     return 'evaluator';
   }
+  if (pathname.startsWith('/doubts')) {
+    return 'doubts';
+  }
   return 'studio';
 };
 
@@ -135,40 +157,46 @@ const moduleAccent = {
   studio:    { border: 'border-indigo-500/70',  bg: 'bg-indigo-500/12',  text: 'text-indigo-400',  glow: 'shadow-md', activePill: 'bg-indigo-600 text-white', tabActive: 'bg-indigo-600 text-white border-indigo-700', tabHover: 'hover:bg-indigo-500/15 hover:text-indigo-300' },
   mcq:       { border: 'border-emerald-500/70', bg: 'bg-emerald-500/12', text: 'text-emerald-400', glow: 'shadow-md', activePill: 'bg-emerald-600 text-white', tabActive: 'bg-emerald-600 text-white border-emerald-700', tabHover: 'hover:bg-emerald-500/15 hover:text-emerald-300' },
   evaluator: { border: 'border-indigo-500/70',  bg: 'bg-indigo-500/12',  text: 'text-indigo-400',  glow: 'shadow-md', activePill: 'bg-indigo-600 text-white', tabActive: 'bg-indigo-600 text-white border-indigo-700', tabHover: 'hover:bg-indigo-500/15 hover:text-indigo-300' },
+  doubts:    { border: 'border-amber-500/70',   bg: 'bg-amber-500/12',   text: 'text-amber-400',   glow: 'shadow-md', activePill: 'bg-amber-600 text-white', tabActive: 'bg-amber-600 text-white border-amber-700', tabHover: 'hover:bg-amber-500/15 hover:text-amber-300' },
 };
 
 // Memoized Sidebar Sub-Component
 const SidebarNav = React.memo(function SidebarNav({
   activeModule,
   pathname,
-  isDrawerOpen,
+  isCollapsed,
   hoveredNavItem,
   setHoveredNavItem,
   handleModuleClick,
 }: {
   activeModule: ModuleType;
   pathname: string;
-  isDrawerOpen: boolean;
+  isCollapsed: boolean;
   hoveredNavItem: string | null;
   setHoveredNavItem: (item: string | null) => void;
   handleModuleClick: (mod: ModuleConfig) => void;
 }) {
   const currentModuleConfig = modules.find((m) => m.id === activeModule) || modules[0];
   const accent = moduleAccent[activeModule];
+  const { openSettings } = useTheme();
 
   return (
     <>
-      {/* TOP TAB BAR — horizontal mode switcher */}
-      <div className="shrink-0 px-3 pt-3 pb-0 border-b border-[var(--border-subtle)] bg-[var(--bg-subtle)]/50">
-        <div className="flex items-center gap-2.5 mb-3 px-1">
-          <Link href="/splash" className="group relative flex items-center gap-2" title="SYLLABUS AI Studio">
+      {/* TOP TAB BAR — horizontal/grid mode switcher */}
+      <div className={`shrink-0 pt-3 pb-0 border-b border-[var(--border-subtle)] bg-[var(--bg-subtle)]/50 ${
+        isCollapsed ? 'px-1' : 'px-2'
+      }`}>
+        <div className={`flex items-center mb-3 ${isCollapsed ? 'justify-center' : 'px-1 gap-2.5'}`}>
+          <Link href="/splash" className="group relative flex items-center gap-2" title="SYLLABUS AI Studio Platform">
             <div className="rounded-xl bg-indigo-500/15 p-2 text-indigo-400 border border-indigo-500/40 group-hover:border-indigo-400 group-hover:scale-105 transition-all shadow-sm">
               <Cpu size={16} className="text-indigo-400" />
             </div>
-            <div className="flex flex-col leading-none">
-              <span className="text-[10px] font-mono font-black text-[var(--text-accent)] uppercase tracking-wider">SYLLABUS AI</span>
-              <span className="text-[8px] font-mono text-[var(--text-muted)] uppercase tracking-widest">Studio Platform</span>
-            </div>
+            {!isCollapsed && (
+              <div className="flex flex-col leading-none">
+                <span className="text-[10px] font-mono font-black text-[var(--text-accent)] uppercase tracking-wider">SYLLABUS AI</span>
+                <span className="text-[8px] font-mono text-[var(--text-muted)] uppercase tracking-widest">Studio Platform</span>
+              </div>
+            )}
             <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 border-2 border-[var(--bg-card)]" />
@@ -176,63 +204,103 @@ const SidebarNav = React.memo(function SidebarNav({
           </Link>
         </div>
 
-        <div className="grid grid-cols-3 gap-1 pb-0">
-          {modules.map((mod) => {
-            const Icon = mod.icon;
-            const isActive = activeModule === mod.id;
-            const a = moduleAccent[mod.id];
+        {isCollapsed ? (
+          <div className="grid grid-cols-2 gap-1 pb-2 w-full justify-items-center">
+            {modules.map((mod) => {
+              const Icon = mod.icon;
+              const isActive = activeModule === mod.id;
+              const a = moduleAccent[mod.id];
 
-            return (
-              <button
-                key={mod.id}
-                onClick={() => handleModuleClick(mod)}
-                className={`relative flex flex-col items-center justify-center gap-1 px-1.5 py-2.5 rounded-t-xl text-[10px] font-mono font-bold uppercase tracking-tight transition-all duration-200 cursor-pointer text-center ${
-                  isActive
-                    ? `${a.text} bg-[var(--bg-card)] ${a.tabActive} border-t border-x border-b-0 shadow-sm z-10`
-                    : `text-[var(--text-muted)] border border-transparent hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]`
-                }`}
-                aria-label={`Switch to ${mod.label}`}
-                title={mod.description}
-              >
-                {isActive && (
-                  <motion.div
-                    layoutId="activeTabUnderline"
-                    className={`absolute top-0 left-1.5 right-1.5 h-[2px] rounded-full ${a.activePill}`}
-                    transition={{ type: 'spring', stiffness: 400, damping: 35 }}
-                  />
-                )}
-                <Icon size={14} className="shrink-0" />
-                <span className="truncate w-full">{mod.shortLabel}</span>
-              </button>
-            );
-          })}
-        </div>
+              return (
+                <button
+                  key={mod.id}
+                  onClick={() => handleModuleClick(mod)}
+                  className={`relative w-8 h-8 flex items-center justify-center rounded-lg text-xs font-mono font-bold transition-all duration-200 cursor-pointer ${
+                    isActive
+                      ? `${a.text} bg-[var(--bg-card)] ${a.tabActive} shadow-sm z-10`
+                      : `text-[var(--text-muted)] border border-transparent hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]`
+                  }`}
+                  aria-label={`Switch to ${mod.label}`}
+                  title={`${mod.label}: ${mod.description}`}
+                >
+                  <Icon size={15} className="shrink-0" />
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="grid grid-cols-4 gap-1 pb-1 w-full">
+            {modules.map((mod) => {
+              const Icon = mod.icon;
+              const isActive = activeModule === mod.id;
+              const a = moduleAccent[mod.id];
+
+              return (
+                <button
+                  key={mod.id}
+                  onClick={() => handleModuleClick(mod)}
+                  className={`relative w-full flex flex-col items-center justify-center gap-1 px-1 py-1.5 rounded-t-xl text-[10px] font-mono font-bold uppercase tracking-tighter transition-all duration-200 cursor-pointer text-center min-w-0 ${
+                    isActive
+                      ? `${a.text} bg-[var(--bg-card)] ${a.tabActive} border-t border-x border-b-0 shadow-sm z-10`
+                      : `text-[var(--text-muted)] border border-transparent hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]`
+                  }`}
+                  aria-label={`Switch to ${mod.label}`}
+                  title={mod.description}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="activeTabUnderline"
+                      className={`absolute top-0 left-1 right-1 h-[2px] rounded-full ${a.activePill}`}
+                      transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+                    />
+                  )}
+                  <Icon size={14} className="shrink-0" />
+                  <span className="w-full text-center text-[10px] font-bold leading-tight whitespace-nowrap overflow-visible">
+                    {mod.shortLabel}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* MODULE HEADER */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={activeModule + '-header'}
-          initial={{ opacity: 0, y: -4 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }}
-          transition={{ duration: 0.18 }}
-          className="px-4 py-2.5 flex items-center justify-between shrink-0 bg-[var(--bg-card)] border-b border-[var(--border-subtle)]"
-        >
-          <p className={`text-[10px] font-mono font-semibold truncate ${accent.text} opacity-90`}>
-            {currentModuleConfig.description}
-          </p>
-          <span className={`ml-2 shrink-0 px-2 py-0.5 rounded text-[9px] font-mono font-bold border ${
-            activeModule === 'studio'
-              ? 'bg-[#1e40af] text-white border-blue-700'
-              : activeModule === 'mcq'
-              ? 'bg-emerald-800 text-white border-emerald-700'
-              : 'bg-indigo-800 text-white border-indigo-700'
-          }`}>
-            {currentModuleConfig.badge}
-          </span>
-        </motion.div>
-      </AnimatePresence>
+      {isCollapsed ? (
+        <div className="py-2 px-2 flex justify-center shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-card)]">
+          <span className={`w-8 h-1 rounded-full ${
+            activeModule === 'studio' ? 'bg-indigo-500' :
+            activeModule === 'mcq' ? 'bg-emerald-500' :
+            activeModule === 'evaluator' ? 'bg-indigo-500' : 'bg-amber-500'
+          }`} title={`${currentModuleConfig.label} Active - ${currentModuleConfig.description}`} />
+        </div>
+      ) : (
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeModule + '-header'}
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.18 }}
+            className="px-4 py-2.5 flex items-center justify-between shrink-0 bg-[var(--bg-card)] border-b border-[var(--border-subtle)]"
+          >
+            <p className={`text-[10px] font-mono font-semibold truncate ${accent.text} opacity-90`}>
+              {currentModuleConfig.description}
+            </p>
+            <span className={`ml-2 shrink-0 px-2 py-0.5 rounded text-[9px] font-mono font-bold border ${
+              activeModule === 'studio'
+                ? 'bg-[#1e40af] text-white border-blue-700'
+                : activeModule === 'mcq'
+                ? 'bg-emerald-800 text-white border-emerald-700'
+                : activeModule === 'evaluator'
+                ? 'bg-indigo-800 text-white border-indigo-700'
+                : 'bg-amber-800 text-white border-amber-700'
+            }`}>
+              {currentModuleConfig.badge}
+            </span>
+          </motion.div>
+        </AnimatePresence>
+      )}
 
       {/* NAV ITEMS */}
       <AnimatePresence mode="wait">
@@ -242,7 +310,9 @@ const SidebarNav = React.memo(function SidebarNav({
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 10 }}
           transition={{ duration: 0.2, ease: 'easeOut' }}
-          className="flex-1 overflow-y-auto overflow-x-hidden custom-sidebar-scrollbar px-3 py-2 space-y-0.5"
+          className={`flex-1 overflow-y-auto overflow-x-hidden custom-sidebar-scrollbar ${
+            isCollapsed ? 'px-1.5 py-2 space-y-1.5 flex flex-col items-center' : 'px-3 py-2 space-y-0.5'
+          }`}
         >
           {currentModuleConfig.items.map((item) => {
             const Icon = item.icon;
@@ -251,6 +321,37 @@ const SidebarNav = React.memo(function SidebarNav({
                            (item.href.includes('/evaluator/report') && pathname.startsWith('/evaluator/report')) ||
                            (item.href.includes('/evaluator/admin/transcript') && pathname.startsWith('/evaluator/admin/transcript'));
             const isHovered = hoveredNavItem === item.href;
+
+            if (isCollapsed) {
+              return (
+                <div key={item.href} className="w-full flex justify-center">
+                  <Link
+                    href={item.href}
+                    onMouseEnter={() => setHoveredNavItem(item.href)}
+                    onMouseLeave={() => setHoveredNavItem(null)}
+                    title={`${item.label} — ${item.leadText}`}
+                    className={`group relative flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-150 border ${
+                      active
+                        ? 'border-[#1d4ed8] bg-[#1e40af] text-white font-bold shadow-md'
+                        : 'border-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] hover:border-[var(--border-subtle)]'
+                    }`}
+                  >
+                    {active && (
+                      <motion.div
+                        layoutId={`activeNavPill-${activeModule}`}
+                        className="absolute -left-1.5 w-1 h-5 rounded-r-full bg-white shadow-xs"
+                      />
+                    )}
+                    <Icon
+                      size={18}
+                      className={`shrink-0 transition-colors ${
+                        active ? 'text-white' : 'text-[var(--text-muted)] group-hover:text-[var(--text-secondary)]'
+                      }`}
+                    />
+                  </Link>
+                </div>
+              );
+            }
 
             return (
               <div key={item.href} className="w-full">
@@ -297,26 +398,34 @@ const SidebarNav = React.memo(function SidebarNav({
       </AnimatePresence>
 
       {/* UTILITIES */}
-      <div className="p-3 border-t border-[var(--border-subtle)] bg-[var(--bg-subtle)]/40 space-y-2 shrink-0">
-        <p className="px-1 text-[9px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-wider">
-          UTILITIES &amp; PREFERENCES
-        </p>
+      <div className={`p-3 border-t border-[var(--border-subtle)] bg-[var(--bg-subtle)]/40 shrink-0 ${
+        isCollapsed ? 'flex flex-col items-center gap-2 px-1' : 'space-y-2'
+      }`}>
+        {!isCollapsed && (
+          <p className="px-1 text-[9px] font-mono font-bold text-[var(--text-muted)] uppercase tracking-wider">
+            UTILITIES &amp; PREFERENCES
+          </p>
+        )}
 
-        <Link
-          href="/settings"
-          className={`flex items-center gap-2.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-all ${
+        <button
+          onClick={openSettings}
+          className={`flex items-center gap-2.5 rounded-xl border transition-all cursor-pointer ${
+            isCollapsed
+              ? 'w-11 h-11 justify-center'
+              : 'w-full px-3 py-2 text-xs font-semibold'
+          } ${
             pathname === '/settings'
               ? 'border-[#1d4ed8] bg-[#1e40af] text-white font-bold shadow-md'
               : 'border-[var(--border-subtle)] bg-[var(--bg-card)] hover:border-[var(--border-focus)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]'
           }`}
-          title="System Settings"
+          title="Appearance & Preference Settings"
         >
-          <Settings size={16} className={`shrink-0 ${pathname === '/settings' ? 'text-white' : 'text-[var(--text-muted)]'}`} />
-          <span className="truncate">Settings</span>
-        </Link>
+          <Settings size={isCollapsed ? 18 : 16} className={`shrink-0 ${pathname === '/settings' ? 'text-white' : 'text-[var(--text-muted)]'}`} />
+          {!isCollapsed && <span className="truncate">Settings</span>}
+        </button>
 
-        <div className="pt-1">
-          <ThemeToggle isCollapsed={false} className="w-full" />
+        <div className={isCollapsed ? "pt-0 w-full flex justify-center" : "pt-1"}>
+          <ThemeToggle isCollapsed={isCollapsed} className="w-full" />
         </div>
       </div>
     </>
@@ -409,7 +518,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   const [activeModule, setActiveModule] = useState<ModuleType>(() => getModuleFromPath(pathname));
-  const [isDrawerOpen, setIsDrawerOpen] = useState(true);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const [hoveredNavItem, setHoveredNavItem] = useState<string | null>(null);
   const [isToggleHovered, setIsToggleHovered] = useState(false);
 
@@ -423,9 +532,6 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const handleModuleClick = (mod: ModuleConfig) => {
     setActiveModule(mod.id);
-    if (!isDrawerOpen) {
-      setIsDrawerOpen(true);
-    }
 
     const isCurrentRouteInModule = mod.items.some((item) => {
       if (item.href.includes('/[') || item.href.includes('attempt-101') || item.href.includes('thread-101')) {
@@ -440,19 +546,17 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   };
 
-  const sidebarWidth = isDrawerOpen ? 'w-[280px]' : 'w-0';
+  const sidebarWidth = isCollapsed ? 'w-20' : 'w-[280px]';
 
   return (
     <div className="min-h-screen w-full font-sans bg-[var(--bg-primary)] text-[var(--text-primary)] transition-colors duration-200 flex overflow-x-hidden">
       <aside
-        className={`fixed top-0 left-0 bottom-0 h-screen z-50 bg-[var(--bg-card)]/95 backdrop-blur-xl border-r border-[var(--border-subtle)] flex flex-col transition-all duration-300 ease-in-out shadow-xl overflow-visible ${sidebarWidth} ${
-          isDrawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        }`}
+        className={`fixed top-0 left-0 bottom-0 h-screen z-50 bg-[var(--bg-card)]/95 backdrop-blur-xl border-r border-[var(--border-subtle)] flex flex-col transition-all duration-300 ease-in-out shadow-xl overflow-visible ${sidebarWidth}`}
       >
         <SidebarNav
           activeModule={activeModule}
           pathname={pathname}
-          isDrawerOpen={isDrawerOpen}
+          isCollapsed={isCollapsed}
           hoveredNavItem={hoveredNavItem}
           setHoveredNavItem={setHoveredNavItem}
           handleModuleClick={handleModuleClick}
@@ -460,18 +564,18 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <div className="absolute -right-3.5 top-1/2 -translate-y-1/2 z-50 overflow-visible">
           <button
-            onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+            onClick={() => setIsCollapsed(!isCollapsed)}
             onMouseEnter={() => setIsToggleHovered(true)}
             onMouseLeave={() => setIsToggleHovered(false)}
             className="flex h-7 w-7 items-center justify-center rounded-full border border-indigo-500/40 bg-slate-900 text-indigo-400 hover:bg-indigo-600 hover:text-white shadow-sm transition-all cursor-pointer focus:outline-none"
-            title={isDrawerOpen ? 'Collapse Navigation' : 'Expand Navigation'}
-            aria-label={isDrawerOpen ? 'Collapse Navigation' : 'Expand Navigation'}
+            title={isCollapsed ? 'Expand Navigation' : 'Collapse Navigation'}
+            aria-label={isCollapsed ? 'Expand Navigation' : 'Collapse Navigation'}
           >
-            {isDrawerOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+            {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
           </button>
 
           <AnimatePresence>
-            {isToggleHovered && !isDrawerOpen && (
+            {isToggleHovered && (
               <motion.div
                 initial={{ opacity: 0, y: -6, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -479,7 +583,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 transition={{ duration: 0.15 }}
                 className="absolute bottom-full mb-2.5 left-1/2 -translate-x-1/2 z-50 whitespace-nowrap rounded-xl border border-indigo-500/40 bg-slate-950 px-3 py-1.5 text-xs font-mono font-bold text-indigo-300 shadow-xl backdrop-blur-xl pointer-events-none"
               >
-                Expand Sidebar Layout &rarr;
+                {isCollapsed ? 'Expand Sidebar Layout \u2192' : 'Collapse Sidebar Layout \u2190'}
                 <div className="absolute left-1/2 -bottom-1 -translate-x-1/2 w-2 h-2 rotate-45 border-r border-b border-indigo-500/40 bg-slate-950" />
               </motion.div>
             )}
@@ -487,22 +591,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      {!isDrawerOpen && (
-        <div className="fixed left-0 top-1/2 -translate-y-1/2 z-50 transition-all duration-300">
-          <button
-            onClick={() => setIsDrawerOpen(true)}
-            className="flex h-10 w-5 items-center justify-center rounded-r-xl border border-l-0 border-indigo-500/40 bg-slate-900 text-indigo-400 hover:bg-indigo-600 hover:text-white shadow-sm transition-all cursor-pointer focus:outline-none"
-            aria-label="Expand sidebar navigation"
-            title="Expand Sidebar (Press Ctrl+B)"
-          >
-            <ChevronRight size={14} />
-          </button>
-        </div>
-      )}
-
       <div
         className={`flex-1 flex flex-col min-h-screen transition-all duration-300 ease-in-out ${
-          isDrawerOpen ? 'pl-[280px]' : 'pl-5'
+          isCollapsed ? 'pl-20' : 'pl-[280px]'
         }`}
       >
         <HeaderBar
@@ -512,7 +603,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           setMinimized={setMinimized}
         />
 
-        <main className="flex-1 w-full max-w-7xl px-6 py-6 pr-14 lg:pr-20">
+        <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 transition-all duration-300 ease-in-out">
           {children}
         </main>
         <ExtractionNotificationPopup />

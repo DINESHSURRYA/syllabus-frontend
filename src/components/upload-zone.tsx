@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/upload-zone.css';
 import { motion } from 'framer-motion';
 import { FileUp, Loader2, Paperclip, XCircle, Lock } from 'lucide-react';
 import { useState } from 'react';

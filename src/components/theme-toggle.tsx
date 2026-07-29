@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/theme-toggle.css';
 import React, { useState } from 'react';
 import { Sun, Moon, Shield, Eye } from 'lucide-react';
 import { useTheme, Theme } from '@/components/providers/theme-provider';

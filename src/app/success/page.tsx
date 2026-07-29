@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { CheckCircle2, Sparkles, CalendarDays, Layers3 } from 'lucide-react';

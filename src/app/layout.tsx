@@ -1,3 +1,4 @@
+import './styles/layout.css';
 import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from 'sonner';

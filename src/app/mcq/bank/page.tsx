@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -26,13 +26,8 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
-import {
-  useMCQStore,
-  QuestionSet,
-  MCQQuestion,
-  BLOOM_LEVEL_DESCRIPTIONS,
-  BloomLevel
-} from '@/lib/mcq-store';
+import { useMCQStore, BLOOM_LEVEL_DESCRIPTIONS } from '@/stores';
+import { QuestionSet, MCQQuestion, BloomLevel } from '@/types';
 import { toast } from 'sonner';
 
 export default function QuestionBankPage() {

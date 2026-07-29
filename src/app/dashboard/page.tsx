@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -7,8 +7,8 @@ import { ArrowRight, BrainCircuit, CalendarDays, Layers3, Sparkles, Library, Gra
 import { AppShell } from '@/components/layout/app-shell';
 import { AnalyticsCard } from '@/components/analytics-card';
 import { Button } from '@/components/ui/button';
-import { getSyllabusList } from '@/lib/api-client';
-import { useGuideStore } from '@/lib/guide-store';
+import { dashboardApi } from '@/lib/api';
+import { useGuideStore } from '@/stores';
 
 export default function DashboardPage() {
   const [totalSyllabiCount, setTotalSyllabiCount] = useState<number>(0);
@@ -18,12 +18,11 @@ export default function DashboardPage() {
   useEffect(() => {
     async function fetchSyllabiCount() {
       try {
-        const data = await getSyllabusList({});
-        const count = data.pagination?.totalItems ?? (data.items?.length || 0);
+        const count = await dashboardApi.getSyllabusCount();
         setTotalSyllabiCount(count);
       } catch (err) {
         console.warn("Could not fetch total syllabi count:", err);
-        setTotalSyllabiCount(1); // fallback
+        setTotalSyllabiCount(0); // fallback
       } finally {
         setIsLoadingCount(false);
       }

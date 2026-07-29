@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/TeachingStrategiesModal.css';
 import React, { useEffect, useRef } from "react";
 import { BookOpen, X, Sparkles, Clock, Users, Layers, Award, Target, CheckCircle2, ShieldCheck, Zap } from "lucide-react";
 import { CatalogPedagogyCategory } from "@/lib/data/pedagogies-catalog-data";

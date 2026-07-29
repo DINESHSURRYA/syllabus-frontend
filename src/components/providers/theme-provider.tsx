@@ -1,6 +1,7 @@
 "use client";
-
+import './styles/theme-provider.css';
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { SettingsModalOverlay } from '@/components/settings-modal';
 
 export type Theme = 'dark' | 'light' | 'eyecomfort';
 export type FontSize = 'small' | 'medium' | 'large';
@@ -11,11 +12,14 @@ interface ThemeContextType {
   fontSize: FontSize;
   fontSizePx: number;
   fontFamily: FontFamily;
+  isSettingsOpen: boolean;
   toggleTheme: () => void;
   setTheme: (theme: Theme) => void;
   setFontSize: (size: FontSize) => void;
   setFontSizePx: (px: number) => void;
   setFontFamily: (family: FontFamily) => void;
+  openSettings: () => void;
+  closeSettings: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType>({
@@ -23,11 +27,14 @@ const ThemeContext = createContext<ThemeContextType>({
   fontSize: 'medium',
   fontSizePx: 16,
   fontFamily: 'sans',
+  isSettingsOpen: false,
   toggleTheme: () => {},
   setTheme: () => {},
   setFontSize: () => {},
   setFontSizePx: () => {},
   setFontFamily: () => {},
+  openSettings: () => {},
+  closeSettings: () => {},
 });
 
 export const useTheme = () => useContext(ThemeContext);
@@ -37,6 +44,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [fontSize, setFontSizeState] = useState<FontSize>('medium');
   const [fontSizePx, setFontSizePxState] = useState<number>(16);
   const [fontFamily, setFontFamilyState] = useState<FontFamily>('sans');
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -114,10 +122,26 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setTheme(nextTheme);
   };
 
+  const openSettings = () => setIsSettingsOpen(true);
+  const closeSettings = () => setIsSettingsOpen(false);
+
   return (
-    <ThemeContext.Provider value={{ theme, fontSize, fontSizePx, fontFamily, toggleTheme, setTheme, setFontSize, setFontSizePx, setFontFamily }}>
+    <ThemeContext.Provider value={{ 
+      theme, 
+      fontSize, 
+      fontSizePx, 
+      fontFamily, 
+      isSettingsOpen, 
+      toggleTheme, 
+      setTheme, 
+      setFontSize, 
+      setFontSizePx, 
+      setFontFamily, 
+      openSettings, 
+      closeSettings 
+    }}>
       {children}
+      <SettingsModalOverlay isOpen={isSettingsOpen} onClose={closeSettings} />
     </ThemeContext.Provider>
   );
 }
-

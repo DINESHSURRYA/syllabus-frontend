@@ -1,3 +1,5 @@
+"use client";
+import './styles/index.css';
 /**
  * Evaluator Shared UI Components
  * 
@@ -14,7 +16,6 @@
  * color theme. Do NOT hardcode colors.
  */
 
-"use client";
 
 import React, { ReactNode } from 'react';
 import { LucideIcon, Bot } from 'lucide-react';
@@ -402,16 +403,13 @@ export function EvaluatorInterviewerTile({
       {/* Concentric animated rings — centered */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center opacity-40 pointer-events-none">
         <div
-          className={`w-48 h-48 rounded-full border border-indigo-400/20 absolute ${isPlaying ? 'animate-ping' : ''}`}
-          style={{ animationDuration: '3s' }}
+          className={`w-48 h-48 rounded-full border border-indigo-400/20 absolute evaluator-ring-outer ${isPlaying ? 'animate-ping' : ''}`}
         />
         <div
-          className={`w-32 h-32 rounded-full border border-indigo-400/40 absolute ${isPlaying ? 'animate-ping' : ''}`}
-          style={{ animationDuration: '2.5s', animationDelay: '0.5s' }}
+          className={`w-32 h-32 rounded-full border border-indigo-400/40 absolute evaluator-ring-middle ${isPlaying ? 'animate-ping' : ''}`}
         />
         <div
-          className={`w-16 h-16 rounded-full border border-indigo-400/60 absolute ${isPlaying ? 'animate-ping' : ''}`}
-          style={{ animationDuration: '2s', animationDelay: '1s' }}
+          className={`w-16 h-16 rounded-full border border-indigo-400/60 absolute evaluator-ring-inner ${isPlaying ? 'animate-ping' : ''}`}
         />
         <div
           className={`w-8 h-8 rounded-full bg-indigo-400/80 shadow-[0_0_20px_rgba(99,102,241,0.6)] ${isPlaying ? 'shadow-[0_0_30px_rgba(99,102,241,0.9)]' : ''}`}

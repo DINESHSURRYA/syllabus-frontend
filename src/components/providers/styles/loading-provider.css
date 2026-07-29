@@ -1,0 +1,5 @@
+/* Styles for loading-provider.tsx */
+
+.loading-spin-2s {
+  animation-duration: 2s;
+}

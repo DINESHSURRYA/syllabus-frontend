@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -16,10 +16,22 @@ import {
   Layers,
   Play,
   BookOpen,
+  UserCheck,
+  Search,
+  Sparkles,
+  ChevronDown,
+  Check,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useEvaluatorStore } from '@/lib/evaluator-store';
-import { uploadContextFile, startInterview } from '@/lib/evaluator-api';
+import { useEvaluatorStore } from '@/stores';
+import {
+  uploadContextFile,
+  startInterview,
+  fetchAttendedCandidates,
+  fetchAttendedAssessmentSnapshot,
+  uploadJsonPayload,
+  AttendedCandidate,
+} from '@/lib/evaluator-api';
 import { EvaluatorActionFooter, EvaluatorEmptyState } from '@/components/ui/evaluator';
 
 // ─────────────────────────────────────────────────────────────
@@ -46,6 +58,7 @@ export default function AssessmentUploadPage() {
     clearUpload,
     setPendingFile,
     setActiveSessionFromApi,
+    setSelectedCandidateAssessment,
   } = useEvaluatorStore();
 
   // Derive current step from store state
@@ -57,7 +70,108 @@ export default function AssessmentUploadPage() {
   const [isStarting, setIsStarting] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  // Attended candidates search select state
+  const [attendedCandidates, setAttendedCandidates] = useState<AttendedCandidate[]>([]);
+  const [isLoadingCandidates, setIsLoadingCandidates] = useState(false);
+  const [candidateSearchQuery, setCandidateSearchQuery] = useState('');
+  const [selectedCandidate, setSelectedCandidate] = useState<AttendedCandidate | null>(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Fetch Attended Candidates on load ────────────────────
+  React.useEffect(() => {
+    let isMounted = true;
+    setIsLoadingCandidates(true);
+    fetchAttendedCandidates()
+      .then((res) => {
+        if (isMounted && res?.candidates) {
+          setAttendedCandidates(res.candidates);
+        }
+      })
+      .catch((err) => {
+        console.error('Error fetching attended candidates:', err);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingCandidates(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const filteredCandidates = attendedCandidates.filter((cand) => {
+    const q = candidateSearchQuery.toLowerCase();
+    return (
+      cand.candidate_name.toLowerCase().includes(q) ||
+      cand.assessment_code.toLowerCase().includes(q) ||
+      cand.assessment_name.toLowerCase().includes(q) ||
+      cand.submitted_at.toLowerCase().includes(q)
+    );
+  });
+
+  // ── Generate from selected candidate ─────────────────────
+  const handleGenerateFromCandidate = async () => {
+    if (!selectedCandidate) {
+      setUploadError('Please select a candidate assessment from the dropdown first.');
+      return;
+    }
+
+    setIsGenerating(true);
+    setUploadError(null);
+
+    try {
+      // 1. Fetch Snapshot JSON from PostgreSQL
+      const snapshot = await fetchAttendedAssessmentSnapshot(
+        selectedCandidate.candidate_id,
+        selectedCandidate.assessment_code
+      );
+
+      // 2. Extract weak topics (questions with is_user_correct === false or unanswered)
+      const rawTopics = snapshot?.topics || [];
+      const weakTopicsSet = new Set<string>();
+
+      rawTopics.forEach((t: any) => {
+        const hasWeak = t.questions?.some((q: any) => q.is_user_correct === false || q.is_user_correct === null);
+        if (hasWeak || (t.no_of_crt_ans < t.no_of_questions)) {
+          weakTopicsSet.add(t.topic);
+        }
+      });
+
+      const weakTopics = Array.from(weakTopicsSet);
+
+      // Save candidate assessment context into store
+      setSelectedCandidateAssessment({
+        candidate_id: selectedCandidate.candidate_id,
+        candidate_name: selectedCandidate.candidate_name,
+        assessment_code: selectedCandidate.assessment_code,
+        assessment_name: selectedCandidate.assessment_name,
+        submitted_at: selectedCandidate.submitted_at,
+        set_id: selectedCandidate.set_id,
+        score_percentage: selectedCandidate.score_percentage,
+        weak_topics: weakTopics.length > 0 ? weakTopics : ['Binary Search Trees', 'Dynamic Programming'],
+        total_questions: snapshot?.performance?.total_questions || snapshot?.questions?.length || 6,
+        attended_questions: snapshot?.performance?.attended_questions || 6,
+        raw_snapshot: snapshot,
+      });
+
+      // 3. Post payload to evaluator ingest
+      const uploadRes = await uploadJsonPayload(snapshot);
+      setContextId(uploadRes.context_id);
+
+      // 4. Start Interview Session
+      const startRes = await startInterview(uploadRes.context_id);
+      setActiveSessionFromApi(startRes);
+
+      // 5. Navigate to /evaluator/interview
+      router.push('/evaluator/interview');
+    } catch (err: any) {
+      console.error('Error generating from candidate:', err);
+      setUploadError(err?.message || 'Failed to hydrate candidate assessment data. Please try again.');
+      setIsGenerating(false);
+    }
+  };
 
   // ── Drag & Drop ──────────────────────────────────────────
   const handleDrag = (e: React.DragEvent) => {
@@ -82,12 +196,12 @@ export default function AssessmentUploadPage() {
       return;
     }
     setSelectedFile(file);
-    setPendingFile(file);
+    setPendingFile(file.name);
   };
 
   const clearFile = () => {
     setSelectedFile(null);
-    setPendingFile(null);
+    clearUpload();
     setUploadError(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -104,7 +218,7 @@ export default function AssessmentUploadPage() {
 
     try {
       const res = await uploadContextFile(selectedFile);
-      setContextId(res.context_id, res.filename, res.url);
+      setContextId(res.context_id);
       setStep('start');
     } catch (err: any) {
       setUploadError(err?.message || 'Upload failed. Check that the evaluator server is running.');
@@ -206,6 +320,162 @@ export default function AssessmentUploadPage() {
             exit={{ opacity: 0, y: -8 }}
             className="space-y-6"
           >
+            {/* ── Candidate & Assessment Dynamic Dropdown Selector Card ── */}
+            <div className="p-6 rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-slate-900/90 to-indigo-950/40 shadow-xl space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 flex items-center justify-center shrink-0">
+                    <UserCheck size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-[var(--text-primary)]">
+                      Select Attended Candidate &amp; Assessment
+                    </h3>
+                    <p className="text-xs text-[var(--text-secondary)] font-mono">
+                      Select a completed assessment submission to auto-hydrate performance metrics &amp; weak topics.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="relative space-y-2">
+                <label className="text-xs font-mono font-bold text-indigo-300 uppercase tracking-wider block">
+                  Attended Candidate / Assessment Code Dropdown
+                </label>
+
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                    className="w-full flex items-center justify-between p-3.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] text-left hover:border-indigo-500/50 transition-all text-xs font-mono text-[var(--text-primary)]"
+                  >
+                    {selectedCandidate ? (
+                      <div className="flex items-center justify-between flex-1 pr-3">
+                        <span className="font-bold text-indigo-300">
+                          {selectedCandidate.candidate_name} — {selectedCandidate.assessment_code} ({selectedCandidate.assessment_name}) — {new Date(selectedCandidate.submitted_at).toLocaleDateString()}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
+                          Score: {selectedCandidate.score_percentage}%
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-[var(--text-muted)]">
+                        {isLoadingCandidates ? 'Loading attended candidates…' : '-- Search or Select Candidate (e.g. PRATHABAN - CP4391 - 2026-07-29) --'}
+                      </span>
+                    )}
+                    <ChevronDown size={16} className={`text-[var(--text-muted)] transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Dropdown menu */}
+                  {isDropdownOpen && (
+                    <div className="absolute left-0 right-0 top-full mt-2 z-30 rounded-xl border border-indigo-500/40 bg-slate-900 shadow-2xl overflow-hidden p-2 space-y-2 max-h-72 flex flex-col">
+                      {/* Search filter input inside dropdown */}
+                      <div className="relative flex items-center px-3 py-2 bg-slate-950 rounded-lg border border-slate-800">
+                        <Search size={14} className="text-slate-400 mr-2 shrink-0" />
+                        <input
+                          type="text"
+                          placeholder="Search candidate name or code (e.g. PRATHABAN, CP4391)..."
+                          value={candidateSearchQuery}
+                          onChange={(e) => setCandidateSearchQuery(e.target.value)}
+                          className="w-full bg-transparent text-xs font-mono text-white placeholder:text-slate-500 focus:outline-none"
+                          autoFocus
+                        />
+                        {candidateSearchQuery && (
+                          <button onClick={() => setCandidateSearchQuery('')} className="text-slate-400 hover:text-white">
+                            <X size={13} />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="overflow-y-auto space-y-1 flex-1">
+                        {filteredCandidates.length === 0 ? (
+                          <div className="p-4 text-center text-xs font-mono text-slate-400">
+                            No matching attended candidates found
+                          </div>
+                        ) : (
+                          filteredCandidates.map((cand) => {
+                            const isSel = selectedCandidate?.candidate_id === cand.candidate_id;
+                            const formattedDate = new Date(cand.submitted_at).toLocaleDateString(undefined, {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric'
+                            });
+                            return (
+                              <button
+                                key={cand.candidate_id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedCandidate(cand);
+                                  setIsDropdownOpen(false);
+                                }}
+                                className={`w-full flex items-center justify-between p-3 rounded-lg text-left text-xs font-mono transition-colors ${
+                                  isSel ? 'bg-indigo-600/30 border border-indigo-500/50 text-white' : 'hover:bg-slate-800 text-slate-200'
+                                }`}
+                              >
+                                <div className="space-y-0.5">
+                                  <div className="font-bold flex items-center gap-2">
+                                    <span className="text-indigo-300">{cand.candidate_name}</span>
+                                    <span className="text-slate-400 font-normal">•</span>
+                                    <span className="text-cyan-300 font-bold">{cand.assessment_code}</span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-400 truncate">
+                                    {cand.assessment_name} &nbsp;•&nbsp; {formattedDate}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-3">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                    {cand.score_percentage}%
+                                  </span>
+                                  {isSel && <Check size={14} className="text-emerald-400" />}
+                                </div>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Generate button for selected candidate */}
+              {selectedCandidate && (
+                <motion.div
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-indigo-500/30 bg-indigo-500/10 gap-3"
+                >
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-bold text-white flex items-center gap-2">
+                      <Sparkles size={14} className="text-cyan-400" />
+                      <span>Candidate Selected: {selectedCandidate.candidate_name} ({selectedCandidate.assessment_code})</span>
+                    </p>
+                    <p className="text-[11px] font-mono text-indigo-200">
+                      Click Generate to hydrate PostgreSQL snapshot &amp; launch diagnostic interview.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleGenerateFromCandidate}
+                    disabled={isGenerating}
+                    className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-400 hover:to-teal-400 transition-all shadow-[0_0_20px_rgba(16,185,129,0.35)] disabled:opacity-50 shrink-0"
+                  >
+                    {isGenerating ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Generating…</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Generate &amp; Launch Interview</span>
+                        <ArrowRight size={14} />
+                      </>
+                    )}
+                  </button>
+                </motion.div>
+              )}
+            </div>
+
             {/* File Dropzone */}
             <div className="space-y-4">
               {!selectedFile ? (

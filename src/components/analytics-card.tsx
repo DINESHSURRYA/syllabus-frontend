@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/analytics-card.css';
 import { motion } from 'framer-motion';
 import { ArrowUpRight } from 'lucide-react';
 

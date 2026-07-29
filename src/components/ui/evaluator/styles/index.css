@@ -1,0 +1,15 @@
+/* Styles for index.tsx */
+
+.evaluator-ring-outer {
+  animation-duration: 3s;
+}
+
+.evaluator-ring-middle {
+  animation-duration: 2.5s;
+  animation-delay: 0.5s;
+}
+
+.evaluator-ring-inner {
+  animation-duration: 2s;
+  animation-delay: 1s;
+}

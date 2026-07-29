@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/layout.css';
 import React, { ReactNode } from 'react';
 import { AppShell } from '@/components/layout/app-shell';
 

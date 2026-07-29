@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -22,13 +22,8 @@ import {
 
 import { AppShell } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
-import {
-  useMCQStore,
-  BLOOM_LEVEL_DESCRIPTIONS,
-  BloomLevel,
-  ExamAttempt,
-  Assessment
-} from '@/lib/mcq-store';
+import { useMCQStore, BLOOM_LEVEL_DESCRIPTIONS } from '@/stores';
+import { BloomLevel, ExamAttempt, Assessment } from '@/types';
 
 export default function InstantExamResultsPage() {
   const params = useParams();

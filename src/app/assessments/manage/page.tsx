@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/page.css';
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -27,7 +27,8 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
-import { useMCQStore, Assessment } from '@/lib/mcq-store';
+import { useMCQStore } from '@/stores';
+import { Assessment } from '@/types';
 import { toast } from 'sonner';
 
 export default function AssessmentManagementPage() {
@@ -92,7 +93,8 @@ export default function AssessmentManagementPage() {
       .map((e) => e.trim())
       .filter((e) => e.length > 0);
 
-    updateAssessment(activeAssessment.id, {
+    updateAssessment({
+      ...activeAssessment,
       accessControl: {
         isPublic,
         hasAccessCode,
@@ -103,7 +105,7 @@ export default function AssessmentManagementPage() {
       proctoring: {
         trackTabSwitches,
         enforceFullscreen,
-        maxTabSwitches,
+        maxTabSwitches: Number(maxTabSwitches),
       },
     });
 

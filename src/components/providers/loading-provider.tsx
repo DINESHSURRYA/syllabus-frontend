@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/loading-provider.css';
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -98,7 +98,7 @@ export function LoadingProvider({ children }: { children: ReactNode }) {
               className="relative z-20 w-full max-w-sm p-6 rounded-3xl border border-indigo-500/40 bg-slate-950/95 text-center shadow-2xl mx-4"
             >
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-indigo-500/30 bg-indigo-500/15 text-xs font-mono text-indigo-300 mb-3">
-                <Cpu className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '2s' }} />
+                <Cpu className="w-3.5 h-3.5 animate-spin loading-spin-2s" />
                 <span>PROCESSING</span>
               </div>
 

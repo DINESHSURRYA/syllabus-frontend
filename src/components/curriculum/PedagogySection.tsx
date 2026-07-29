@@ -1,5 +1,5 @@
 "use client";
-
+import './styles/PedagogySection.css';
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { Sparkles, ChevronRight, Search, X } from "lucide-react";
 import { PEDAGOGIES_CATALOG_DATA, CatalogPedagogyCategory } from "@/lib/data/pedagogies-catalog-data";
