@@ -19,6 +19,8 @@ export const AIProcessingStatus: React.FC<AIProcessingStatusProps> = ({ jobId, c
     if (!jobId && !courseId) return;
 
     let isMounted = true;
+    let intervalId: NodeJS.Timeout;
+
     const fetchStatus = async () => {
       try {
         let url = jobId ? `/api/jobs/${jobId}` : `/api/courses/${courseId}/status`;
@@ -28,13 +30,17 @@ export const AIProcessingStatus: React.FC<AIProcessingStatusProps> = ({ jobId, c
           if (isMounted) {
             if (jobId) {
               setJobData(data);
-              if (data.status === 'completed' && onComplete) {
-                onComplete();
+              if (data.status?.toLowerCase() === 'completed') {
+                if (onComplete) onComplete();
+                if (intervalId) clearInterval(intervalId);
               }
             } else if (data.latestJob) {
               setJobData(data.latestJob);
             }
           }
+        } else if (res.status === 404) {
+          // If status endpoint returns 404, stop polling to avoid flooding logs
+          if (intervalId) clearInterval(intervalId);
         }
       } catch (err) {
         console.error('Error fetching job status:', err);
@@ -44,10 +50,10 @@ export const AIProcessingStatus: React.FC<AIProcessingStatusProps> = ({ jobId, c
     };
 
     fetchStatus();
-    const interval = setInterval(fetchStatus, 3000);
+    intervalId = setInterval(fetchStatus, 3000);
     return () => {
       isMounted = false;
-      clearInterval(interval);
+      if (intervalId) clearInterval(intervalId);
     };
   }, [jobId, courseId, onComplete]);
 

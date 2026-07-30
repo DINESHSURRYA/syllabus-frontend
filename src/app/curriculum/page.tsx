@@ -48,10 +48,7 @@ const ExperimentMapperTab = dynamic(
   }
 );
 
-const TeachingStrategiesModal = dynamic(
-  () => import('@/components/curriculum/TeachingStrategiesModal').then((mod) => mod.TeachingStrategiesModal),
-  { ssr: false }
-);
+import { TeachingStrategiesModal } from '@/components/curriculum/TeachingStrategiesModal';
 
 const ALL_UNITS_LIST = ['Unit 1', 'Unit 2', 'Unit 3', 'Unit 4', 'Unit 5'];
 

@@ -224,17 +224,15 @@ function mapBackendToFullSyllabus(backendData: any): FullSyllabusData {
   const pdfCourseCode = backendData.pdfCourseCode || content.pdfCourseCode || (backendData as any).pdf_course_code || "";
   const mismatchWarning = backendData.mismatchWarning || content.mismatchWarning || (backendData as any).mismatch_warning || "";
 
-  const courseCode = sanitizeText(
+  const rawCourseCode = sanitizeText(
     backendData.courseCode ||
     backendData.course_code ||
-    content.courseCode ||
-    content.course_code ||
     courseObj.code ||
     courseObj.courseCode ||
     content.metadata?.courseCode ||
     "COURSE"
   );
-  const courseTitle = sanitizeText(
+  const rawCourseTitle = sanitizeText(
     backendData.courseName ||
     backendData.course_name ||
     backendData.courseTitle ||
@@ -253,6 +251,25 @@ function mapBackendToFullSyllabus(backendData: any): FullSyllabusData {
     content.metadata?.title ||
     "Untitled Syllabus"
   );
+
+  let courseCode = rawCourseCode;
+  let courseTitle = rawCourseTitle;
+
+  const codeRegex = /\b([A-Z]{2,4}\s*\d{3,5}[A-Z]?)\b/i;
+  const cleanC = courseCode.trim().toUpperCase().replace(/\s+/g, '');
+  const cleanT = courseTitle.trim();
+
+  if (['COURSE', 'DEFAULT', 'UNKNOWN', 'NONE', ''].includes(cleanC) || !codeRegex.test(cleanC)) {
+    const m = cleanT.match(codeRegex);
+    if (m) {
+      courseCode = m[1].toUpperCase().replace(/\s+/g, '');
+      const remTitle = cleanT.replace(new RegExp('\\b' + m[1] + '\\b', 'gi'), '').replace(/^[\s\-:_]+|[\s\-:_]+$/g, '');
+      courseTitle = remTitle.length > 2 ? remTitle : 'Course Syllabus';
+    }
+  } else if (codeRegex.test(cleanT.toUpperCase().replace(/\s+/g, '')) && !codeRegex.test(cleanC)) {
+    courseCode = cleanT.toUpperCase().replace(/\s+/g, '');
+    courseTitle = cleanC;
+  }
   const department = sanitizeText(backendData.department || content.department || courseObj.department || content.metadata?.department || "Computer Science & Engineering");
   const regulation = sanitizeText(backendData.regulation || content.regulation || courseObj.regulation || content.metadata?.regulation || "2021");
   const semester = sanitizeText(backendData.semester || content.semester || courseObj.semester || content.metadata?.semester || "5th Semester");
@@ -466,25 +483,47 @@ function mapBackendToFullSyllabus(backendData: any): FullSyllabusData {
 
   // 8. CO-PO MAPPING DATA
   const rawCoPo = backendData.coPoMapping || content.coPoMapping || {};
-  const coStatements = rawCoPo.coStatements || (outcomes.length > 0 ? outcomes.map((out: any, i: number) => {
-    const str = typeof out === 'string' ? out : (out?.description ? `${out.code || `CO${i+1}`}: ${out.description}` : String(out));
-    return str.startsWith('CO') ? str : `CO${i + 1}: ${str}`;
-  }) : [
-    "CO1: Understand core principles and foundational concepts.",
-    "CO2: Analyze problems and formulate structured solutions.",
-    "CO3: Apply methodologies to real-world domain scenarios.",
-    "CO4: Evaluate performance metrics and design trade-offs.",
-    "CO5: Synthesize integrated outcomes for advanced applications."
-  ]);
-  const poStatements = rawCoPo.poStatements || [
-    "PO1", "PO2", "PO3", "PO4", "PO5", "PO6", "PO7", "PO8", "PO9", "PO10", "PO11", "PO12", "PSO1", "PSO2", "PSO3"
-  ];
+  
+  const rawOutcomesList = backendData.outcomes || backendData.courseOutcomes || content.outcomes || content.courseOutcomes || [];
+  const cleanStmts: string[] = [];
+  if (Array.isArray(rawOutcomesList)) {
+    rawOutcomesList.forEach((oc: any) => {
+      let txt = typeof oc === 'string' ? oc : (oc.description || oc.statement || oc.title || '');
+      txt = txt.replace(/^(?:CO\d+\s*:\s*)+/gi, '').trim();
+      if (txt) cleanStmts.push(txt);
+    });
+  }
+
+  const finalCoStatements: string[] = [];
+  for (let i = 0; i < 5; i++) {
+    const coCode = `CO${i + 1}`;
+    let uTitle = '';
+    if (units[i]) {
+      uTitle = units[i].title || '';
+      uTitle = uTitle.replace(/^(?:UNIT|MODULE)\s+[IVXLCDM\d]+\s*:\s*/gi, '').trim();
+    }
+    let stmt = cleanStmts[i] || (uTitle ? `Understand and analyze core concepts, applications, and principles of ${uTitle}.` : '');
+    if (!stmt) {
+      const defaultStmts = [
+        'Describe fundamentals and main characteristics of core subject domains.',
+        'Analyze engineering problem specifications and design domain components.',
+        'Apply technological frameworks and principles to harness domain solutions.',
+        'Evaluate operational parameters, system performance, and design trade-offs.',
+        'Identify and evaluate emerging technical trends and advanced domain problems.'
+      ];
+      stmt = defaultStmts[i];
+    }
+    finalCoStatements.push(`${coCode}: ${stmt}`);
+  }
+
+  const coStatements = finalCoStatements;
+  const poStatements = ["PO1", "PO2", "PO3", "PO4", "PO5", "PO6", "PO7", "PO8", "PO9", "PO10", "PO11"];
   const matrix = rawCoPo.matrix || {
-    "CO1": { "PO1": 3, "PO2": 2, "PO3": 1, "PSO1": 2 },
-    "CO2": { "PO1": 3, "PO2": 3, "PO3": 2, "PSO1": 3 },
-    "CO3": { "PO1": 2, "PO2": 3, "PO3": 3, "PSO2": 2 },
-    "CO4": { "PO2": 3, "PO3": 3, "PO4": 2, "PSO2": 3 },
-    "CO5": { "PO3": 3, "PO4": 3, "PO5": 2, "PSO3": 3 }
+    "CO1": { "PO1": 3, "PO2": 3, "PO3": 3, "PO4": 2, "PO5": 2, "PO6": 1, "PO7": 2, "PO8": 1, "PO9": 1, "PO10": 2, "PO11": 1 },
+    "CO2": { "PO1": 3, "PO2": 3, "PO3": 3, "PO4": 2, "PO5": 2, "PO6": 2, "PO7": 0, "PO8": 2, "PO9": 2, "PO10": 1, "PO11": 1 },
+    "CO3": { "PO1": 3, "PO2": 3, "PO3": 3, "PO4": 3, "PO5": 3, "PO6": 0, "PO7": 0, "PO8": 2, "PO9": 2, "PO10": 1, "PO11": 1 },
+    "CO4": { "PO1": 2, "PO2": 2, "PO3": 2, "PO4": 3, "PO5": 3, "PO6": 0, "PO7": 2, "PO8": 2, "PO9": 2, "PO10": 1, "PO11": 1 },
+    "CO5": { "PO1": 3, "PO2": 3, "PO3": 3, "PO4": 3, "PO5": 2, "PO6": 1, "PO7": 2, "PO8": 2, "PO9": 2, "PO10": 1, "PO11": 1 }
   };
 
   const universityVal = sanitizeText(backendData.university || content.university || courseObj.university || "Anna University");
@@ -3589,7 +3628,7 @@ export default function SyllabusVerificationPage() {
                               ...prev,
                               coPoMapping: {
                                 coStatements: res.coStatements || prev.coPoMapping?.coStatements || [],
-                                poStatements: res.poStatements || prev.coPoMapping?.poStatements || ["PO1", "PO2", "PO3", "PO4", "PO5", "PO6", "PO7", "PO8", "PO9", "PO10", "PO11", "PO12", "PSO1", "PSO2", "PSO3"],
+                                poStatements: ["PO1", "PO2", "PO3", "PO4", "PO5", "PO6", "PO7", "PO8", "PO9", "PO10", "PO11"],
                                 matrix: res.matrix
                               }
                             }));
@@ -3612,12 +3651,12 @@ export default function SyllabusVerificationPage() {
                           const newCo = `CO${nextNum}: New Course Outcome Statement`;
                           const newCos = [...currentCos, newCo];
                           const matrix = { ...(prev.coPoMapping?.matrix || {}) };
-                          matrix[`CO${nextNum}`] = { PO1: 3, PO2: 2, PSO1: 2 };
+                          matrix[`CO${nextNum}`] = { PO1: 3, PO2: 2 };
                           return {
                             ...prev,
                             coPoMapping: {
                               coStatements: newCos,
-                              poStatements: prev.coPoMapping?.poStatements || ["PO1", "PO2", "PO3", "PO4", "PO5", "PO6", "PO7", "PO8", "PO9", "PO10", "PO11", "PO12", "PSO1", "PSO2", "PSO3"],
+                              poStatements: ["PO1", "PO2", "PO3", "PO4", "PO5", "PO6", "PO7", "PO8", "PO9", "PO10", "PO11"],
                               matrix
                             }
                           };
@@ -3677,7 +3716,7 @@ export default function SyllabusVerificationPage() {
                     <thead>
                       <tr className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-mono">
                         <th className="p-2.5 font-bold border-r border-slate-200 dark:border-slate-800 whitespace-nowrap">CO / PO</th>
-                        {(syllabus.coPoMapping?.poStatements || ["PO1", "PO2", "PO3", "PO4", "PO5", "PO6", "PO7", "PO8", "PO9", "PO10", "PO11", "PO12", "PSO1", "PSO2", "PSO3"]).map((po) => (
+                        {(["PO1", "PO2", "PO3", "PO4", "PO5", "PO6", "PO7", "PO8", "PO9", "PO10", "PO11"]).map((po) => (
                           <th key={po} className="p-2.5 font-bold text-center border-r border-slate-200/50 dark:border-slate-800/50 min-w-[40px]">
                             {po}
                           </th>
@@ -3688,7 +3727,7 @@ export default function SyllabusVerificationPage() {
                       {(syllabus.coPoMapping?.coStatements || ["CO1", "CO2", "CO3", "CO4", "CO5"]).map((stmt: any, cIdx: number) => {
                         const stmtStr = typeof stmt === 'string' ? stmt : (stmt?.code || `CO${cIdx + 1}`);
                         const coKey = (typeof stmt === 'object' && stmt?.code) ? stmt.code : (stmtStr.split(':')[0].trim() || `CO${cIdx + 1}`);
-                        const pos = syllabus.coPoMapping?.poStatements || ["PO1", "PO2", "PO3", "PO4", "PO5", "PO6", "PO7", "PO8", "PO9", "PO10", "PO11", "PO12", "PSO1", "PSO2", "PSO3"];
+                        const pos = ["PO1", "PO2", "PO3", "PO4", "PO5", "PO6", "PO7", "PO8", "PO9", "PO10", "PO11"];
                         
                         return (
                           <tr key={coKey} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/50 transition-colors">
