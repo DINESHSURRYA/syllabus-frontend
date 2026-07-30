@@ -11,14 +11,14 @@ const nextConfig = {
        * Forward every /api/evaluator/<path> request to the real backend.
        * Covers: /upload, /start_interview, /submit_answer, /stop_interview,
        *         /admin/interviews, /admin/interviews/:id, /admin/logs
-       * The browser only talks to localhost — CORS is avoided entirely.
        */
       {
         source: '/api/evaluator/:path*',
-        destination: `${EVALUATOR_API_URL}/:path*`,
+        destination: `${EVALUATOR_API_URL}/api/evaluator/:path*`,
       },
     ];
   },
 };
 
 module.exports = nextConfig;
+

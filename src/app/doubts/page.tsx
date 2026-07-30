@@ -17,6 +17,7 @@ import {
   ArrowRight,
   Search,
   ChevronRight,
+  ChevronDown,
   Volume2,
   Mic,
   MicOff,
@@ -80,6 +81,12 @@ interface TokenRecord {
   timestamp: string;
 }
 
+interface UnitOption {
+  id: string;
+  unitNumber: number;
+  title: string;
+}
+
 export default function DoubtsPage() {
   const { openSettings } = useTheme();
 
@@ -91,6 +98,13 @@ export default function DoubtsPage() {
   // Dynamic Course & Syllabus Selection
   const [availableCourses, setAvailableCourses] = useState<{ code: string; title: string }[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<string>('');
+  
+  // Dynamic Units State & Multi-Selection
+  const [courseUnits, setCourseUnits] = useState<UnitOption[]>([]);
+  const [selectedUnits, setSelectedUnits] = useState<string[]>(['ALL']);
+  const [isUnitDropdownOpen, setIsUnitDropdownOpen] = useState(false);
+  const unitDropdownRef = useRef<HTMLDivElement>(null);
+
   const [selectedTopic, setSelectedTopic] = useState('All Topics');
   
   // Chat & Doubts State
@@ -98,16 +112,131 @@ export default function DoubtsPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isQuerying, setIsQuerying] = useState(false);
 
-  // Audio Playback & Synthesis State
-  const [activeAudioKey, setActiveAudioKey] = useState<string | null>(null);
-  const [isSynthesizing, setIsSynthesizing] = useState<string | null>(null);
-  const [playingAudioUrl, setPlayingAudioUrl] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Audio Playback & Speech Synthesis State
+  const [playingSpeechKey, setPlayingSpeechKey] = useState<string | null>(null);
+  const [isSpeechPaused, setIsSpeechPaused] = useState(false);
 
-  // Mic Voice Recording State
+  // Mic Voice Recording (Speech Recognition) State & Ref
   const [isRecording, setIsRecording] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const baseTextRef = useRef<string>("");
+
+  // Initialize Web Speech Recognition
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const SpeechRecognition =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const rec = new SpeechRecognition();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = "en-US";
+      recognitionRef.current = rec;
+    }
+  }, []);
+
+  const handleMicToggle = () => {
+    const rec = recognitionRef.current;
+    if (!rec) {
+      alert("Speech recognition is not supported in this browser. Please use Google Chrome or Microsoft Edge.");
+      return;
+    }
+
+    if (!isRecording) {
+      setIsRecording(true);
+      baseTextRef.current = queryInput ? queryInput.trim() + " " : "";
+
+      rec.onresult = (event: any) => {
+        let finalTranscript = "";
+        let interimTranscript = "";
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+        setQueryInput(baseTextRef.current + finalTranscript + interimTranscript);
+      };
+
+      rec.onerror = (event: any) => {
+        console.error("Speech recognition error", event.error);
+        setIsRecording(false);
+      };
+
+      rec.onend = () => {
+        setIsRecording(false);
+      };
+
+      try {
+        rec.start();
+      } catch (e) {
+        console.warn("Speech recognition start issue", e);
+      }
+    } else {
+      try {
+        rec.stop();
+      } catch (e) {}
+      setIsRecording(false);
+    }
+  };
+
+  // Text-to-Speech audio synthesis handler
+  const speakText = (textToSpeak: string, speechKey: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      alert("Text-to-speech audio output is not supported in this browser.");
+      return;
+    }
+
+    if (playingSpeechKey === speechKey) {
+      if (isSpeechPaused) {
+        window.speechSynthesis.resume();
+        setIsSpeechPaused(false);
+      } else {
+        window.speechSynthesis.pause();
+        setIsSpeechPaused(true);
+      }
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    // Clean text for natural speech reading
+    const cleanText = textToSpeak
+      .replace(/[*_#`~>]/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .trim();
+
+    if (!cleanText) return;
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    utterance.onstart = () => {
+      setPlayingSpeechKey(speechKey);
+      setIsSpeechPaused(false);
+    };
+    utterance.onend = () => {
+      setPlayingSpeechKey(null);
+      setIsSpeechPaused(false);
+    };
+    utterance.onerror = () => {
+      setPlayingSpeechKey(null);
+      setIsSpeechPaused(false);
+    };
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const stopSpeech = () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setPlayingSpeechKey(null);
+      setIsSpeechPaused(false);
+    }
+  };
 
   // Document Ingestion State
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -118,45 +247,288 @@ export default function DoubtsPage() {
   // Token Records State
   const [tokenRecords, setTokenRecords] = useState<TokenRecord[]>([]);
 
-  // Load dynamic courses from localStorage / backend API
+  // Load dynamic courses from backend API & localStorage
   useEffect(() => {
-    try {
-      const savedDraft = localStorage.getItem('syllabus_draft_data');
-      const savedListStr = localStorage.getItem('syllabus_repository_list');
+    const loadCourses = async () => {
       const coursesList: { code: string; title: string }[] = [];
 
-      if (savedDraft) {
-        const parsed = JSON.parse(savedDraft);
-        if (parsed.course?.code && parsed.course?.title) {
-          coursesList.push({ code: parsed.course.code, title: parsed.course.title });
+      // 1. Fetch real courses from Backend PostgreSQL API
+      try {
+        const res = await fetch(`${customApiUrl}/api/courses`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            data.forEach((c: any) => {
+              const code = c.courseCode || c.code || c.id;
+              const title = c.courseTitle || c.courseName || c.title || code;
+              if (code && !coursesList.some(item => item.code === code)) {
+                coursesList.push({ code, title });
+              }
+            });
+          }
         }
+      } catch (err) {
+        console.warn("Backend courses fetch attempt:", err);
       }
 
-      if (savedListStr) {
-        const list = JSON.parse(savedListStr);
-        if (Array.isArray(list)) {
-          list.forEach((item: any) => {
-            if (item.course_code && item.course_name) {
-              if (!coursesList.some(c => c.code === item.course_code)) {
-                coursesList.push({ code: item.course_code, title: item.course_name });
-              }
+      // 1b. Fetch from saved syllabi API endpoint
+      try {
+        const res = await fetch(`${customApiUrl}/api/syllabus/saved`);
+        if (res.ok) {
+          const data = await res.json();
+          const list = Array.isArray(data) ? data : (data.items || []);
+          list.forEach((c: any) => {
+            const courseInfo = c && typeof c.course === 'object' && c.course ? c.course : c;
+            const code = (c.courseCode || c.code || courseInfo?.code || courseInfo?.courseCode || '').trim();
+            const title = (c.courseName || c.title || courseInfo?.title || courseInfo?.courseName || c.courseTitle || '').trim();
+            if (code && title && !coursesList.some(item => item.code === code)) {
+              coursesList.push({ code, title });
             }
           });
         }
+      } catch (err) {
+        console.warn("Backend saved syllabus fetch attempt:", err);
       }
 
-      // If no syllabus uploaded yet, set standard fallback default option
-      if (coursesList.length === 0) {
-        coursesList.push({ code: "CS8691", title: "Artificial Intelligence & Machine Learning" });
+      // 2. Load any local drafts or repository items
+      try {
+        const savedDraft = localStorage.getItem('syllabus_draft_data');
+        const savedListStr = localStorage.getItem('syllabus_repository_list');
+        const activeSaved = localStorage.getItem('active_saved_syllabus');
+
+        if (savedDraft) {
+          const parsed = JSON.parse(savedDraft);
+          if (parsed.course?.code && parsed.course?.title) {
+            if (!coursesList.some(c => c.code === parsed.course.code)) {
+              coursesList.push({ code: parsed.course.code, title: parsed.course.title });
+            }
+          }
+        }
+
+        if (activeSaved) {
+          const parsed = JSON.parse(activeSaved);
+          const code = parsed.courseCode || parsed.code || parsed.course?.code;
+          const title = parsed.courseName || parsed.title || parsed.course?.title || code;
+          if (code && !coursesList.some(c => c.code === code)) {
+            coursesList.push({ code, title });
+          }
+        }
+
+        if (savedListStr) {
+          const list = JSON.parse(savedListStr);
+          if (Array.isArray(list)) {
+            list.forEach((item: any) => {
+              const code = item.course_code || item.courseCode;
+              const title = item.course_name || item.courseName;
+              if (code && title && !coursesList.some(c => c.code === code)) {
+                coursesList.push({ code, title });
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.error("Failed loading local courses", e);
       }
 
-      setAvailableCourses(coursesList);
-      setSelectedCourse(`${coursesList[0].code} — ${coursesList[0].title}`);
-    } catch {
-      setAvailableCourses([{ code: "CS8691", title: "Artificial Intelligence & Machine Learning" }]);
-      setSelectedCourse("CS8691 — Artificial Intelligence & Machine Learning");
-    }
+      if (coursesList.length > 0) {
+        setAvailableCourses(coursesList);
+        setSelectedCourse(prev => prev || `${coursesList[0].code} — ${coursesList[0].title}`);
+      }
+    };
+
+    loadCourses();
+  }, [customApiUrl]);
+
+  // Dynamic unit extraction helpers
+  const extractUnitsListFromData = (data: any): any[] => {
+    if (!data) return [];
+    if (Array.isArray(data.units) && data.units.length > 0) return data.units;
+    if (Array.isArray(data.hierarchy) && data.hierarchy.length > 0) return data.hierarchy;
+    if (data.content && Array.isArray(data.content.units) && data.content.units.length > 0) return data.content.units;
+    if (data.content && Array.isArray(data.content.hierarchy) && data.content.hierarchy.length > 0) return data.content.hierarchy;
+    if (Array.isArray(data) && data.length > 0) return data;
+    return [];
+  };
+
+  const parseUnitsFromPayload = (rawUnits: any[]): UnitOption[] => {
+    if (!Array.isArray(rawUnits) || rawUnits.length === 0) return [];
+
+    return rawUnits.map((u: any, idx: number) => {
+      let uNum = idx + 1;
+      let titleRaw = '';
+
+      if (typeof u === 'string') {
+        titleRaw = u.trim();
+      } else if (typeof u === 'object' && u !== null) {
+        if (u.unitNumber || u.unit_number || u.number) {
+          uNum = Number(u.unitNumber || u.unit_number || u.number);
+        }
+        titleRaw = (u.title || u.unitTitle || u.name || u.unit_name || u.heading || '').trim();
+      }
+
+      let displayTitle = titleRaw;
+      if (!displayTitle) {
+        displayTitle = `Unit ${uNum}`;
+      } else if (!displayTitle.toLowerCase().startsWith('unit')) {
+        displayTitle = `Unit ${uNum} — ${titleRaw}`;
+      } else if (displayTitle.includes(':')) {
+        displayTitle = displayTitle.replace(':', ' — ');
+      }
+
+      return {
+        id: `Unit ${uNum}`,
+        unitNumber: uNum,
+        title: displayTitle
+      };
+    });
+  };
+
+  // Dynamically fetch units whenever selected course changes
+  useEffect(() => {
+    if (!selectedCourse) return;
+
+    const courseCode = selectedCourse.split(' — ')[0]?.trim() || selectedCourse;
+    
+    const fetchCourseUnits = async () => {
+      let rawUnits: any[] = [];
+
+      // Try 1: /api/courses/{courseCode}/syllabus
+      try {
+        const res = await fetch(`${customApiUrl}/api/courses/${encodeURIComponent(courseCode)}/syllabus`);
+        if (res.ok) {
+          const data = await res.json();
+          rawUnits = extractUnitsListFromData(data);
+        }
+      } catch (err) {
+        console.warn("Could not fetch units via /api/courses/syllabus:", err);
+      }
+
+      // Try 2: /api/syllabus/{courseCode}
+      if (rawUnits.length === 0) {
+        try {
+          const res = await fetch(`${customApiUrl}/api/syllabus/${encodeURIComponent(courseCode)}`);
+          if (res.ok) {
+            const data = await res.json();
+            rawUnits = extractUnitsListFromData(data);
+          }
+        } catch (err) {
+          console.warn("Could not fetch units via /api/syllabus:", err);
+        }
+      }
+
+      // Try 3: /api/curriculum/hierarchy?syllabusId={courseCode}
+      if (rawUnits.length === 0) {
+        try {
+          const res = await fetch(`${customApiUrl}/api/curriculum/hierarchy?syllabusId=${encodeURIComponent(courseCode)}`);
+          if (res.ok) {
+            const data = await res.json();
+            rawUnits = extractUnitsListFromData(data);
+          }
+        } catch (err) {
+          console.warn("Could not fetch units via /api/curriculum/hierarchy:", err);
+        }
+      }
+
+      // Try 4: /api/courses/{courseCode}
+      if (rawUnits.length === 0) {
+        try {
+          const res = await fetch(`${customApiUrl}/api/courses/${encodeURIComponent(courseCode)}`);
+          if (res.ok) {
+            const data = await res.json();
+            rawUnits = extractUnitsListFromData(data);
+          }
+        } catch (err) {
+          console.warn("Could not fetch units via /api/courses:", err);
+        }
+      }
+
+      // Try 5: Check localStorage active_saved_syllabus
+      if (rawUnits.length === 0) {
+        try {
+          const activeSaved = localStorage.getItem('active_saved_syllabus');
+          if (activeSaved) {
+            const parsed = JSON.parse(activeSaved);
+            const parsedCode = parsed.courseCode || parsed.code || parsed.course?.code;
+            if (!parsedCode || parsedCode.toLowerCase() === courseCode.toLowerCase()) {
+              rawUnits = extractUnitsListFromData(parsed);
+            }
+          }
+        } catch (e) {}
+      }
+
+      // Try 6: Check localStorage draft
+      if (rawUnits.length === 0) {
+        try {
+          const savedDraft = localStorage.getItem('syllabus_draft_data');
+          if (savedDraft) {
+            const parsed = JSON.parse(savedDraft);
+            rawUnits = extractUnitsListFromData(parsed);
+          }
+        } catch (e) {}
+      }
+
+      // Try 7: Check localStorage repository list
+      if (rawUnits.length === 0) {
+        try {
+          const savedListStr = localStorage.getItem('syllabus_repository_list');
+          if (savedListStr) {
+            const list = JSON.parse(savedListStr);
+            if (Array.isArray(list)) {
+              const matched = list.find((item: any) => {
+                const code = item.course_code || item.courseCode || item.code;
+                return code && code.toLowerCase() === courseCode.toLowerCase();
+              });
+              if (matched) {
+                rawUnits = extractUnitsListFromData(matched);
+              }
+            }
+          }
+        } catch (e) {}
+      }
+
+      const parsedUnits = parseUnitsFromPayload(rawUnits);
+      setCourseUnits(parsedUnits);
+      setSelectedUnits(['ALL']);
+    };
+
+    fetchCourseUnits();
+  }, [selectedCourse, customApiUrl]);
+
+  // Click outside to close unit dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (unitDropdownRef.current && !unitDropdownRef.current.contains(event.target as Node)) {
+        setIsUnitDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Multi-selection unit toggler
+  const handleToggleUnit = (unitId: string) => {
+    if (unitId === 'ALL') {
+      setSelectedUnits(['ALL']);
+      return;
+    }
+
+    let updated: string[];
+    if (selectedUnits.includes('ALL')) {
+      updated = [unitId];
+    } else if (selectedUnits.includes(unitId)) {
+      updated = selectedUnits.filter(u => u !== unitId);
+      if (updated.length === 0) {
+        updated = ['ALL'];
+      }
+    } else {
+      updated = [...selectedUnits.filter(u => u !== 'ALL'), unitId];
+      if (courseUnits.length > 0 && updated.length === courseUnits.length) {
+        updated = ['ALL'];
+      }
+    }
+
+    setSelectedUnits(updated);
+  };
 
   // Health check discovery
   const checkBackendHealth = async () => {
@@ -178,13 +550,17 @@ export default function DoubtsPage() {
     const queryText = textToSubmit || queryInput;
     if (!queryText.trim() || isQuerying) return;
 
+    const unitFilterString = selectedUnits.includes('ALL') || selectedUnits.length === 0
+      ? "All Units & Topics"
+      : selectedUnits.join(', ');
+
     const userMsg: ChatMessage = {
       id: `usr_${Date.now()}`,
       role: 'user',
       content: queryText,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      courseCode: selectedCourse.split(' — ')[0] || 'CS8691',
-      topic: selectedTopic
+      courseCode: selectedCourse.split(' — ')[0] || '',
+      topic: unitFilterString
     };
 
     setMessages(prev => [...prev, userMsg]);
@@ -195,20 +571,32 @@ export default function DoubtsPage() {
       const res = await fetch(`${customApiUrl}/chat/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: queryText, course: selectedCourse, topic: selectedTopic })
+        body: JSON.stringify({ question: queryText, course: selectedCourse, topic: unitFilterString })
       });
 
-      if (!res.ok) throw new Error("Backend query failed");
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || `Server error ${res.status}`);
+      }
+
       const data = await res.json();
+
+      const rawSections = data.response_sections || data.sections || [];
+      const formattedSections: Section[] = rawSections.map((s: any) => ({
+        title: s.title || "Concept Answer",
+        visual_markdown: s.visual_markdown || s.content || "",
+        voice_explanation: s.voice_explanation || "",
+        highlights: s.highlights || []
+      }));
 
       const assistantMsg: ChatMessage = {
         id: `ast_${Date.now()}`,
         role: 'assistant',
-        sections: data.sections || [
+        sections: formattedSections.length > 0 ? formattedSections : [
           {
             title: "Concept Answer",
-            visual_markdown: data.answer || "No response text received.",
-            highlights: ["RAG Explanation"]
+            visual_markdown: data.answer || "No response section received.",
+            highlights: []
           }
         ],
         sources: data.sources || [],
@@ -217,32 +605,23 @@ export default function DoubtsPage() {
 
       setMessages(prev => [...prev, assistantMsg]);
       saveDoubtToHistory(userMsg, assistantMsg);
-      recordTokenUsage('/chat/', 'gemini-1.5-flash', 320, 240);
-    } catch {
-      // Offline / Fallback RAG response generator
-      const fallbackMsg: ChatMessage = {
-        id: `ast_${Date.now()}`,
+      recordTokenUsage('/chat/', 'gpt-4o-mini', 320, 240);
+    } catch (err: any) {
+      const errorMsg: ChatMessage = {
+        id: `ast_err_${Date.now()}`,
         role: 'assistant',
         sections: [
           {
-            title: "1. Core Concept Overview",
-            visual_markdown: `Explanation for: "${queryText}"\n\nThis concept forms a foundational topic in ${selectedCourse}.`,
-            highlights: ["Syllabus Concept", "Key Terminology"]
-          },
-          {
-            title: "2. Key Examination Insights",
-            visual_markdown: "• Make sure to include proper equations and block diagrams during 13-mark questions.\n• Refer to recommended syllabus reference textbooks for complete derivations."
+            title: "Error Notification",
+            visual_markdown: `⚠️ Could not retrieve answer from backend: ${err.message || "Connection failure"}. Please ensure backend is running at ${customApiUrl}.`,
+            highlights: []
           }
         ],
-        sources: ingestedDocs.length > 0 ? [
-          { source: ingestedDocs[0].filename, content: "Syllabus vector embedding chunk match..." }
-        ] : [],
+        sources: [],
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
 
-      setMessages(prev => [...prev, fallbackMsg]);
-      saveDoubtToHistory(userMsg, fallbackMsg);
-      recordTokenUsage('/chat/', 'fallback-rag', 150, 180);
+      setMessages(prev => [...prev, errorMsg]);
     } finally {
       setIsQuerying(false);
     }
@@ -257,7 +636,7 @@ export default function DoubtsPage() {
       const newHistoryItem = {
         id: userMsg.id,
         question: userMsg.content || 'Untitled Question',
-        courseCode: userMsg.courseCode || 'CS8691',
+        courseCode: userMsg.courseCode || '',
         courseTitle: selectedCourse.split(' — ')[1] || 'Syllabus Course',
         unit: 'Unit I',
         topic: userMsg.topic || 'General Topic',
@@ -321,31 +700,26 @@ export default function DoubtsPage() {
         const data = await res.json();
         const newDoc: IngestedDoc = {
           filename: uploadFile.name,
-          chunks: data.chunks || 24,
+          chunks: data.chunks_created || data.chunks || 0,
           uploadedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           status: 'processed'
         };
         setIngestedDocs(prev => [newDoc, ...prev]);
-        setUploadSuccessMsg(`Successfully ingested ${uploadFile.name} into RAG database.`);
-        recordTokenUsage('/document/upload', 'text-embedding-004', 1200, 0);
+        setUploadSuccessMsg(`Successfully ingested ${uploadFile.name} into RAG database (${data.chunks_created || 0} chunks).`);
+        recordTokenUsage('/document/upload', 'text-embedding-3-small', 1200, 0);
       } else {
-        throw new Error("Upload failed");
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || "Upload failed");
       }
-    } catch {
-      // Local session ingestion state fallback
-      const newDoc: IngestedDoc = {
-        filename: uploadFile.name,
-        chunks: 18,
-        uploadedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        status: 'processed'
-      };
-      setIngestedDocs(prev => [newDoc, ...prev]);
-      setUploadSuccessMsg(`Processed ${uploadFile.name} for local doubt session.`);
+    } catch (err: any) {
+      setUploadSuccessMsg(null);
+      alert(`Ingestion failed: ${err.message || "Could not process document."}`);
     } finally {
       setIsUploading(false);
       setUploadFile(null);
     }
   };
+
 
   return (
     <AppShell>
@@ -465,22 +839,96 @@ export default function DoubtsPage() {
                   </select>
                 </div>
 
-                <div>
+                {/* Dynamic Multi-Select Unit / Topic Filter */}
+                <div className="relative" ref={unitDropdownRef}>
                   <label className="text-[10px] font-mono font-bold text-[var(--text-muted)] uppercase block mb-1">
                     Unit / Topic Filter
                   </label>
-                  <select
-                    value={selectedTopic}
-                    onChange={(e) => setSelectedTopic(e.target.value)}
-                    className="w-full bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-bold text-[var(--text-primary)] focus:outline-none focus:border-amber-500"
+                  
+                  <button
+                    type="button"
+                    onClick={() => setIsUnitDropdownOpen(prev => !prev)}
+                    className="w-full bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded-xl px-3 py-2 text-xs font-bold text-[var(--text-primary)] focus:outline-none focus:border-amber-500 flex items-center justify-between gap-2 shadow-sm hover:bg-[var(--bg-subtle)] transition-all"
                   >
-                    <option value="All Topics">All Units &amp; Topics</option>
-                    <option value="Unit I">Unit I — Foundational Concepts</option>
-                    <option value="Unit II">Unit II — Problem Solving &amp; Search</option>
-                    <option value="Unit III">Unit III — Neural Networks &amp; Deep Learning</option>
-                  </select>
+                    <span className="truncate">
+                      {selectedUnits.includes('ALL') || selectedUnits.length === 0
+                        ? `All Units & Topics (${courseUnits.length > 0 ? courseUnits.length + ' Units' : 'Full Syllabus'})`
+                        : selectedUnits.length === 1
+                          ? (courseUnits.find(u => u.id === selectedUnits[0])?.title || selectedUnits[0])
+                          : `${selectedUnits.length} Units Selected (${selectedUnits.join(', ')})`
+                      }
+                    </span>
+                    <ChevronDown size={14} className={`text-amber-500 transition-transform ${isUnitDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  <AnimatePresence>
+                    {isUnitDropdownOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 5 }}
+                        className="absolute z-50 mt-1 w-full bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl shadow-2xl p-2 max-h-64 overflow-y-auto space-y-1"
+                      >
+                        {/* Option: All Units */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleUnit('ALL')}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+                            selectedUnits.includes('ALL')
+                              ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+                              : 'text-[var(--text-primary)] hover:bg-[var(--bg-subtle)]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedUnits.includes('ALL')}
+                              onChange={() => {}}
+                              className="accent-amber-500 rounded cursor-pointer"
+                            />
+                            <span>All Units &amp; Topics</span>
+                          </div>
+                          <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase">Full Syllabus</span>
+                        </button>
+
+                        {courseUnits.length > 0 ? (
+                          courseUnits.map(unit => {
+                            const isChecked = !selectedUnits.includes('ALL') && selectedUnits.includes(unit.id);
+                            return (
+                              <button
+                                key={unit.id}
+                                type="button"
+                                onClick={() => handleToggleUnit(unit.id)}
+                                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                                  isChecked
+                                    ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+                                    : 'text-[var(--text-primary)] hover:bg-[var(--bg-subtle)]'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 truncate text-left">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {}}
+                                    className="accent-amber-500 rounded cursor-pointer"
+                                  />
+                                  <span className="truncate">{unit.title}</span>
+                                </div>
+                                <span className="text-[10px] font-mono text-amber-500 font-bold ml-2 shrink-0">Unit {unit.unitNumber}</span>
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <div className="p-3 text-center text-xs text-[var(--text-muted)] italic">
+                            All Units &amp; Topics selected
+                          </div>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
+
 
               {/* Chat Thread Messages */}
               <div className="min-h-[300px] max-h-[550px] overflow-y-auto space-y-4 p-4 rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)]">
@@ -489,7 +937,7 @@ export default function DoubtsPage() {
                     <BrainCircuit size={48} className="mx-auto text-amber-500/50 mb-3" />
                     <h3 className="text-base font-bold text-[var(--text-primary)]">Ready for Your Doubt</h3>
                     <p className="text-xs mt-1 max-w-md mx-auto">
-                      Type your question below or pick a topic to receive a structured AI explanation.
+                      Type your question below, click the microphone for voice input, or pick a topic to receive a structured AI explanation.
                     </p>
                   </div>
                 ) : (
@@ -506,21 +954,64 @@ export default function DoubtsPage() {
                         <span className="font-bold uppercase text-amber-500">
                           {msg.role === 'user' ? 'Student Doubt' : 'AI Structured Answer'}
                         </span>
-                        <span>{msg.timestamp}</span>
+                        
+                        <div className="flex items-center gap-3">
+                          {msg.role === 'assistant' && (
+                            <button
+                              onClick={() => {
+                                const fullText = msg.sections
+                                  ? msg.sections.map(s => `${s.title}. ${s.visual_markdown}`).join('\n')
+                                  : msg.content || '';
+                                speakText(fullText, msg.id);
+                              }}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                                playingSpeechKey === msg.id
+                                  ? 'bg-amber-500 text-black shadow-md animate-pulse'
+                                  : 'bg-[var(--bg-card)] border border-[var(--border-subtle)] hover:border-amber-500 text-amber-500'
+                              }`}
+                              title={playingSpeechKey === msg.id ? (isSpeechPaused ? "Resume Voice Readout" : "Pause Voice Readout") : "Listen to Audio Explanation"}
+                            >
+                              <Volume2 size={14} className={playingSpeechKey === msg.id && !isSpeechPaused ? "animate-bounce" : ""} />
+                              <span>
+                                {playingSpeechKey === msg.id
+                                  ? (isSpeechPaused ? "Paused" : "Playing Voice...")
+                                  : "Speech Output"
+                                }
+                              </span>
+                            </button>
+                          )}
+                          <span>{msg.timestamp}</span>
+                        </div>
                       </div>
 
                       {msg.content && <p className="text-sm font-semibold">{msg.content}</p>}
 
                       {msg.sections && (
                         <div className="space-y-3 mt-2">
-                          {msg.sections.map((sec, sIdx) => (
-                            <div key={sIdx} className="p-3 rounded-xl bg-[var(--bg-card)] border border-[var(--border-subtle)] space-y-1">
-                              <h4 className="font-bold text-amber-500 text-xs">{sec.title}</h4>
-                              <p className="text-xs text-[var(--text-secondary)] whitespace-pre-line leading-relaxed">
-                                {sec.visual_markdown}
-                              </p>
-                            </div>
-                          ))}
+                          {msg.sections.map((sec, sIdx) => {
+                            const secKey = `${msg.id}_sec_${sIdx}`;
+                            const isSecPlaying = playingSpeechKey === secKey;
+                            return (
+                              <div key={sIdx} className="p-3.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border-subtle)] space-y-1.5 relative group">
+                                <div className="flex items-center justify-between">
+                                  <h4 className="font-bold text-amber-500 text-xs">{sec.title}</h4>
+                                  <button
+                                    onClick={() => speakText(`${sec.title}. ${sec.visual_markdown}`, secKey)}
+                                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 transition-all ${
+                                      isSecPlaying
+                                        ? 'bg-amber-500 text-black'
+                                        : 'bg-[var(--bg-subtle)] text-[var(--text-muted)] hover:text-amber-500'
+                                    }`}
+                                  >
+                                    <Volume2 size={12} /> {isSecPlaying ? (isSpeechPaused ? 'Resume' : 'Playing') : 'Listen Section'}
+                                  </button>
+                                </div>
+                                <p className="text-xs text-[var(--text-secondary)] whitespace-pre-line leading-relaxed">
+                                  {sec.visual_markdown}
+                                </p>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -534,16 +1025,46 @@ export default function DoubtsPage() {
                 )}
               </div>
 
-              {/* Input Box Bar */}
+              {/* Listening Indicator Banner */}
+              {isRecording && (
+                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-500 text-xs font-mono font-bold flex items-center justify-between animate-pulse">
+                  <div className="flex items-center gap-2">
+                    <Mic size={16} className="animate-bounce text-rose-500" />
+                    <span>Listening to your voice... Speak your doubt clearly into your mic.</span>
+                  </div>
+                  <button
+                    onClick={handleMicToggle}
+                    className="px-2.5 py-1 rounded-lg bg-rose-500 text-white text-[10px] uppercase font-bold hover:bg-rose-600 transition-colors"
+                  >
+                    Stop Listening
+                  </button>
+                </div>
+              )}
+
+              {/* Input Box Bar with Voice Input Mic Button */}
               <div className="relative flex items-center gap-2">
                 <input
                   type="text"
-                  placeholder="Ask any doubt regarding this course syllabus..."
+                  placeholder="Ask any doubt regarding this course syllabus (or use Voice Input mic)..."
                   value={queryInput}
                   onChange={(e) => setQueryInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleQuerySubmit()}
                   className="flex-1 bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-amber-500 shadow-sm"
                 />
+
+                {/* Voice Input Mic Button */}
+                <button
+                  type="button"
+                  onClick={handleMicToggle}
+                  className={`p-3 rounded-xl border transition-all flex items-center justify-center ${
+                    isRecording
+                      ? 'bg-rose-500 text-white border-rose-600 shadow-lg animate-pulse ring-2 ring-rose-500/50'
+                      : 'bg-[var(--bg-card)] text-[var(--text-muted)] hover:text-amber-500 border-[var(--border-subtle)] hover:bg-[var(--bg-subtle)]'
+                  }`}
+                  title={isRecording ? "Click to stop recording voice input" : "Click to speak your doubt (Voice Input)"}
+                >
+                  {isRecording ? <MicOff size={18} /> : <Mic size={18} />}
+                </button>
 
                 <button
                   onClick={() => handleQuerySubmit()}

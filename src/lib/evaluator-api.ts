@@ -27,6 +27,7 @@ export type {
   SessionMetrics,
   ReasoningProfile,
   InterviewReport,
+  EvaluatorReport,
   UploadResponse,
   StartInterviewResponse,
   SubmitAnswerResponse,
@@ -40,6 +41,12 @@ export type {
   ChatResponse,
   AttendedCandidate,
   AttendedCandidatesResponse,
+  InterviewCandidate,
+  CandidateAssessmentAttempt,
+  Phase3InterviewQuestion,
+  GenerateAIInterviewResponse,
+  InterviewAnswerResponse,
+  InterviewDiagnosticReport,
 } from './api/evaluator.api';
 
 export {
@@ -54,4 +61,11 @@ export {
   sendChat,
   fetchAttendedCandidates,
   fetchAttendedAssessmentSnapshot,
+  fetchInterviewCandidates,
+  fetchCandidateAssessments,
+  generateAIInterview,
+  fetchInterviewState,
+  submitInterviewQuestionAnswer,
+  completeAIInterview,
+  fetchInterviewDiagnosticReport,
 } from './api/evaluator.api';

@@ -7,7 +7,7 @@ import { client } from './client';
 import { API } from './endpoints';
 
 export async function generateQuestions(payload: any) {
-  return client.post(API.mcq.generate, payload);
+  return client.post(API.mcq.generate, payload, { timeout: 0 });
 }
 
 export async function generateMcqQuestions(payload: any) {

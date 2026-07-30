@@ -1,39 +1,64 @@
-# dependencies
-/node_modules
-/.pnpm
-/.yarn
+# Dependencies
+node_modules/
+.pnpm/
+.yarn/
 
-# next.js
-/.next/
-/out/
+# Next.js & Build Outputs
+.next/
+out/
+build/
+dist/
 
-# production
-/build
-
-# debug
+# Logs & Debugging
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+logs/
 
-# local env files
-.env*.local
+# Environment Files & Secrets
 .env
+.env*.local
+.env.production
+.env.staging
+.env.development
+!*.env.example
 
-# vercel
-.vercel
+# Vercel
+.vercel/
 
-# TypeScript
+# TypeScript & Cache
 *.tsbuildinfo
 next-env.d.ts
+.turbo/
+.cache/
 
-# Backup and temp files
+# Testing & Coverage
+coverage/
+.nyc_output/
+
+# Scratch & Temporary Files
 *.bak
 *.tmp
+*.temp
 run.txt
 ip.py
 output_file_*.json
+evaluator frontend.txt
+co.html
 .commandcode/
 
-# OS files
+# IDE & Code Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating System Files
 .DS_Store
+.DS_Store?
 Thumbs.db
+ehthumbs.db
+Desktop.ini

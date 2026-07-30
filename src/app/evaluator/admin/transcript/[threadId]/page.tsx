@@ -1,6 +1,6 @@
 "use client";
 import './styles/page.css';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ScrollText,
@@ -15,39 +15,70 @@ import {
   Tag,
   CheckCircle2,
   XCircle,
+  ArrowLeft,
+  Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useEvaluatorStore } from '@/stores';
 import {
-  EvaluatorBackButton,
-  EvaluatorEmptyState,
-  EvaluatorTimelineTurn,
-} from '@/components/ui/evaluator';
+  fetchAdminInterviewDetail,
+  AdminInterviewDetailResponse,
+} from '@/lib/evaluator-api';
+import { ReportScreen } from '@/components/ui/evaluator/ReportScreen';
 
-// ============================================================
-// Main Page
-// ============================================================
 export default function InterviewTranscriptPage() {
   const params = useParams();
   const router = useRouter();
   const threadId = (params?.threadId as string) || '';
-  const { sessions } = useEvaluatorStore();
 
-  const session = (sessions || []).find((s: any) => s.threadId === threadId);
-  const [expandedTurn, setExpandedTurn] = useState<number | null>(1);
+  const [detail, setDetail] = useState<AdminInterviewDetailResponse | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [expandedTurn, setExpandedTurn] = useState<number | null>(0);
 
-  if (!session) {
+  useEffect(() => {
+    if (!threadId) return;
+    let isMounted = true;
+    setLoading(true);
+
+    fetchAdminInterviewDetail(threadId)
+      .then((data) => {
+        if (isMounted) {
+          setDetail(data);
+        }
+      })
+      .catch((err) => {
+        console.error('Error fetching interview detail:', err);
+        if (isMounted) setError('Failed to load detailed transcript for thread.');
+      })
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [threadId]);
+
+  if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-        <AlertCircle size={48} className="text-amber-400" />
-        <h2 className="text-lg font-bold text-[var(--text-primary)]">Transcript Not Found</h2>
-        <p className="text-xs text-[var(--text-muted)]">
-          No session transcript found for thread{' '}
-          <code className="font-mono text-indigo-400">{threadId}</code>.
+      <div className="flex-1 flex flex-col items-center justify-center h-full min-h-screen gap-4">
+        <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin" />
+        <p className="text-surface font-mono animate-pulse">Loading Detailed Evidence Trail...</p>
+      </div>
+    );
+  }
+
+  if (error || !detail) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4 p-6 text-center">
+        <AlertCircle size={48} className="text-error" />
+        <h2 className="text-xl font-bold text-surface">Transcript Not Found</h2>
+        <p className="text-xs text-muted max-w-md">
+          {error || `No transcript detail found for thread ID: ${threadId}`}
         </p>
         <button
           onClick={() => router.push('/evaluator/admin')}
-          className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white shadow-md hover:bg-indigo-500 transition-all"
+          className="px-6 py-2.5 rounded-full text-xs font-bold bg-accent text-background shadow-md hover:bg-accent/90 transition-all"
         >
           Back to Admin Dashboard
         </button>
@@ -55,187 +86,166 @@ export default function InterviewTranscriptPage() {
     );
   }
 
-  const toggleAccordion = (turnNumber: number) =>
-    setExpandedTurn(expandedTurn === turnNumber ? null : turnNumber);
+  const toggleAccordion = (idx: number) => {
+    setExpandedTurn(expandedTurn === idx ? null : idx);
+  };
 
-  const totalQs = session.totalQuestionsAsked;
-  const totalCorrect = session.totalAnsweredCorrectly;
+  const interactions = detail.interactions || [];
 
   return (
-    <div className="space-y-8 pb-20">
+    <div className="flex-1 w-full max-w-6xl mx-auto p-4 sm:p-6 lg:p-8 pb-20">
+      {/* Back Button */}
+      <button
+        onClick={() => router.push('/evaluator/admin')}
+        className="flex items-center gap-2 text-surface/70 hover:text-accent transition-colors mb-8 text-sm"
+      >
+        <ArrowLeft className="w-4 h-4" /> Back to Admin Dashboard
+      </button>
 
-      {/* ── Header ──────────────────────────────────────── */}
-      <div className="flex flex-col gap-3 border-b border-[var(--border-subtle)] pb-6">
-        <EvaluatorBackButton
-          onClick={() => router.push('/evaluator/admin')}
-          label="Back to Admin Dashboard"
-        />
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-mono text-indigo-400 font-bold uppercase tracking-wider mb-1">
-              <ScrollText size={14} />
-              <span>Full Interview Transcript</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-[var(--text-primary)]">
-              Session {session.threadId}
-            </h1>
-            <div className="flex flex-wrap items-center gap-2 mt-1">
-              <span className="text-xs font-mono text-[var(--text-muted)]">
-                Topic: <span className="text-[var(--text-secondary)] font-bold">{session.topic}</span>
-              </span>
-              <span className="text-xs font-mono text-[var(--text-muted)]">|</span>
-              <span className="text-xs font-mono text-[var(--text-muted)]">
-                {session.turns.length} turns
-              </span>
-            </div>
-          </div>
+      {/* Header */}
+      <div className="mb-12 border-b border-surface/10 pb-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div>
+          <span className="font-mono text-accent text-sm tracking-widest uppercase mb-2 flex items-center gap-2">
+            <ScrollText className="w-4 h-4" /> Detailed Evidence Trail
+          </span>
+          <h1 className="font-serif text-3xl sm:text-4xl text-surface">
+            Session Transcript: {threadId.slice(0, 16)}...
+          </h1>
+        </div>
+        {detail.report && (
           <button
-            onClick={() => router.push(`/evaluator/report/${session.threadId}`)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono font-bold bg-indigo-600 text-white hover:bg-indigo-500 transition-all shadow-md shrink-0"
+            onClick={() => router.push(`/evaluator/report?id=${threadId}`)}
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-mono font-bold bg-accent text-background hover:bg-accent/90 transition-all shadow-md shrink-0"
           >
-            <span>View Report</span>
-            <ExternalLink size={14} />
+            <span>View Full Report</span>
+            <ExternalLink className="w-4 h-4" />
           </button>
+        )}
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-12">
+        <div className="p-4 rounded-2xl border border-surface/10 bg-surface/5 space-y-1">
+          <span className="text-[10px] font-mono text-surface/50 uppercase block">Total Turns</span>
+          <span className="text-xl font-black text-accent font-mono">{interactions.length}</span>
+        </div>
+        <div className="p-4 rounded-2xl border border-surface/10 bg-surface/5 space-y-1">
+          <span className="text-[10px] font-mono text-surface/50 uppercase block">Stop Reason</span>
+          <span className="text-sm font-bold text-surface uppercase font-mono">{detail.stop_reason || 'Completed'}</span>
+        </div>
+        <div className="p-4 rounded-2xl border border-surface/10 bg-surface/5 space-y-1">
+          <span className="text-[10px] font-mono text-surface/50 uppercase block">Thread ID</span>
+          <span className="text-xs font-mono text-surface/70 truncate block">{threadId}</span>
+        </div>
+        <div className="p-4 rounded-2xl border border-surface/10 bg-surface/5 space-y-1">
+          <span className="text-[10px] font-mono text-surface/50 uppercase block">Status</span>
+          <span className="text-xs font-bold text-success uppercase font-mono">LOGGED</span>
         </div>
       </div>
 
-      {/* ── Overview Cards ───────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="p-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] space-y-1">
-          <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase block">Turns</span>
-          <span className="text-xl font-black text-indigo-400 font-mono">{session.turns.length}</span>
-        </div>
-        <div className="p-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] space-y-1">
-          <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase block">Asked</span>
-          <span className="text-xl font-black text-cyan-400 font-mono">{totalQs}</span>
-        </div>
-        <div className="p-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] space-y-1">
-          <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase block">Correct</span>
-          <span className="text-xl font-black text-emerald-400 font-mono">{totalCorrect}</span>
-        </div>
-        <div className="p-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] space-y-1">
-          <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase block">Topics</span>
-          <span className="text-xl font-black text-[var(--text-primary)] font-mono">{session.totalTopics}</span>
-        </div>
-      </div>
+      {/* Interaction Timeline */}
+      <div className="space-y-12 mb-16 relative">
+        <div className="absolute left-6 top-4 bottom-4 w-px bg-surface/10 hidden md:block"></div>
 
-      {/* ── Timeline ─────────────────────────────────────── */}
-      <div className="space-y-6">
-        <div className="flex items-center gap-2">
-          <BrainCircuit className="text-indigo-400" size={20} />
-          <h2 className="text-lg font-bold text-[var(--text-primary)]">
-            Turn-by-Turn Transcript
-          </h2>
-        </div>
-
-        {session.turns.length === 0 ? (
-          <EvaluatorEmptyState
-            icon={ScrollText}
-            title="No transcript turns yet"
-            description="This session has not recorded any interview turns."
-          />
+        {interactions.length === 0 ? (
+          <p className="text-surface/60 italic text-center py-8">No step-by-step turns recorded for this interview session.</p>
         ) : (
-          <div className="space-y-6 relative before:absolute before:inset-0 before:left-6 before:w-0.5 before:bg-[var(--border-subtle)] before:z-0">
-            {(session.turns || []).map((turn: any) => {
-              const isOpen = expandedTurn === turn.turnNumber;
-              const passed = (turn.evaluationScore ?? 0) >= 0.5;
+          interactions.map((interaction, idx) => {
+            const qText = interaction.question?.question || 'Question';
+            const studentAns = interaction.student_answer || 'No response provided.';
+            const evalObj = interaction.evaluation || {};
+            const isExpanded = expandedTurn === idx;
 
-              return (
-                <EvaluatorTimelineTurn key={turn.turnNumber} turnNumber={turn.turnNumber}>
+            return (
+              <div key={idx} className="relative z-10 grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-12">
+                <div className="md:col-span-1 hidden md:flex justify-center">
+                  <div className="w-12 h-12 rounded-full bg-background border border-surface/20 flex items-center justify-center font-mono text-accent text-lg font-bold">
+                    {idx + 1}
+                  </div>
+                </div>
 
-                  {/* ── AI Question Card ── */}
-                  <div className="p-5 rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950/40 via-[var(--bg-card)] to-[var(--bg-card)] shadow-md space-y-3">
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div className="flex items-center gap-2">
-                        <div className="h-7 w-7 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
-                          <Bot size={16} />
-                        </div>
-                        <span className="text-xs font-mono font-bold text-indigo-400 uppercase tracking-wider">
-                          AI Interviewer
+                <div className="md:col-span-11 space-y-6">
+                  {/* AI Question */}
+                  <div className="bg-surface/5 border border-surface/10 rounded-2xl p-6">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Bot className="w-4 h-4 text-accent" />
+                      <h4 className="text-xs font-semibold text-accent uppercase tracking-wider">AI Question</h4>
+                      {interaction.current_topic && (
+                        <span className="ml-auto text-[10px] font-mono px-2 py-0.5 rounded bg-accent/10 text-accent border border-accent/20">
+                          {interaction.current_topic}
                         </span>
-                      </div>
-                      <span className="text-[11px] font-mono text-[var(--text-muted)]">{turn.timestamp}</span>
+                      )}
                     </div>
-
-                    <p className="text-sm sm:text-base font-medium text-[var(--text-primary)] leading-relaxed">
-                      {turn.questionStem}
+                    <p className="text-surface/90 text-lg font-serif italic mb-4">
+                      "{qText}"
                     </p>
 
-                    {/* Target concepts */}
-                    {turn.targetConcepts?.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        <Tag size={10} className="text-[var(--text-muted)] mt-1 shrink-0" />
-                        {turn.targetConcepts.map((c: any) => (
-                          <span key={c} className="px-2.5 py-0.5 rounded-full border border-indigo-500/20 bg-indigo-500/8 text-indigo-300 text-[10px] font-mono font-bold">
-                            {c}
-                          </span>
-                        ))}
+                    {/* Internal Prompt State */}
+                    {interaction.state_given_to_questioning_agent && (
+                      <div className="bg-surface/10 rounded-xl p-4 border border-surface/10">
+                        <button
+                          onClick={() => toggleAccordion(idx)}
+                          className="w-full flex items-center justify-between text-xs font-semibold text-surface/70 uppercase tracking-wider mb-2"
+                        >
+                          <span>Internal Prompt State (state_given_to_questioning_agent)</span>
+                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        </button>
+                        {isExpanded && (
+                          <pre className="text-xs text-surface/60 overflow-x-auto font-mono max-h-64 scrollbar-thin scrollbar-thumb-surface/20 mt-2">
+                            {JSON.stringify(interaction.state_given_to_questioning_agent, null, 2)}
+                          </pre>
+                        )}
                       </div>
                     )}
                   </div>
 
-                  {/* ── Candidate Response Card ── */}
-                  {turn.candidateAnswer && (
-                    <div className="p-5 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] shadow-sm space-y-3">
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <div className="flex items-center gap-2">
-                          <div className="h-7 w-7 rounded-xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center">
-                            <User size={16} />
-                          </div>
-                          <span className="text-xs font-mono font-bold text-cyan-400 uppercase tracking-wider">
-                            Student Response
+                  {/* Student Answer */}
+                  <div className="bg-surface/10 border-l-4 border-l-accent rounded-r-2xl p-6">
+                    <div className="flex items-center gap-2 mb-3">
+                      <User className="w-4 h-4 text-surface/70" />
+                      <h4 className="text-xs font-semibold text-surface/70 uppercase tracking-wider">Student Response</h4>
+                    </div>
+                    <p className="text-surface/90 text-lg leading-relaxed font-medium">
+                      {studentAns}
+                    </p>
+                  </div>
+
+                  {/* Evaluator Assessment */}
+                  {evalObj && (
+                    <div className="bg-surface/5 border border-surface/10 rounded-2xl p-6 border-t-4 border-t-success/50">
+                      <h4 className="text-xs font-semibold text-success uppercase tracking-wider mb-3 flex items-center justify-between">
+                        <span>Evaluator Assessment</span>
+                        {evalObj.assessment_confidence && (
+                          <span className="text-[10px] text-surface/50 normal-case bg-background px-2 py-1 rounded border border-surface/10 font-mono">
+                            Confidence: {evalObj.assessment_confidence}
                           </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 font-mono text-[11px] text-[var(--text-muted)]">
-                          <Clock size={13} />
-                          <span>{turn.responseTimeSeconds}s</span>
-                        </div>
-                      </div>
-
-                      <p className="text-xs sm:text-sm text-[var(--text-primary)] leading-relaxed bg-[var(--bg-subtle)] p-3.5 rounded-xl border border-[var(--border-subtle)]">
-                        {turn.candidateAnswer}
-                      </p>
-
-                      {/* Evaluation result */}
-                      {turn.evaluationScore !== null && (
-                        <button
-                          onClick={() => toggleAccordion(turn.turnNumber)}
-                          className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-xs font-mono hover:bg-[var(--bg-hover)] transition-colors"
-                        >
-                          <div className="flex items-center gap-2">
-                            {passed
-                              ? <CheckCircle2 size={14} className="text-emerald-400" />
-                              : <XCircle size={14} className="text-amber-400" />}
-                            <span className={`font-bold ${passed ? 'text-emerald-400' : 'text-amber-400'}`}>
-                              Score: {((turn.evaluationScore ?? 0) * 100).toFixed(0)}%
-                            </span>
-                          </div>
-                          {isOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                        </button>
-                      )}
-
-                      <AnimatePresence>
-                        {isOpen && turn.evaluationFeedback && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            className="overflow-hidden"
-                          >
-                            <div className={`p-3.5 rounded-xl border text-xs font-mono leading-relaxed ${passed ? 'border-emerald-500/30 bg-emerald-500/8 text-emerald-200' : 'border-amber-500/30 bg-amber-500/8 text-amber-200'}`}>
-                              {turn.evaluationFeedback}
-                            </div>
-                          </motion.div>
                         )}
-                      </AnimatePresence>
+                      </h4>
+                      <div className="space-y-3 text-sm text-surface/80">
+                        {evalObj.feedback && <p>{evalObj.feedback}</p>}
+                        {evalObj.score !== undefined && (
+                          <div className="flex items-center gap-2 font-mono text-xs text-success">
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Score: {evalObj.score}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
-                </EvaluatorTimelineTurn>
-              );
-            })}
-          </div>
+                </div>
+              </div>
+            );
+          })
         )}
       </div>
+
+      {/* Embedded Full Report if Available */}
+      {detail.report && (
+        <div className="mt-16 border-t border-surface/10 pt-12">
+          <h2 className="font-serif text-2xl text-surface mb-8">Generated Diagnostic Report</h2>
+          <ReportScreen report={detail.report} />
+        </div>
+      )}
     </div>
   );
 }

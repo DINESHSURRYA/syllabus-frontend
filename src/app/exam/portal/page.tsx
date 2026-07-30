@@ -227,6 +227,67 @@ export default function CandidateExamPortalPage() {
     };
 
     recordAttempt(newAttempt);
+
+    // ── Persist submission payload directly to PostgreSQL Backend ──────
+    const bloomMap: Record<string, string> = {
+      K1: 'Remember', K2: 'Understand', K3: 'Apply', K4: 'Analyze', K5: 'Evaluate', K6: 'Create'
+    };
+
+    const pgPayload = {
+      candidate: {
+        candidate_code: candidateEmail ? candidateEmail.split('@')[0].toUpperCase() : 'CAND-USER',
+        name: candidateName || 'Candidate',
+        email: candidateEmail || 'candidate@example.com',
+        department: 'Computer Science',
+        course_batch: '2026'
+      },
+      assessment: {
+        assessment_name: targetAssessment.title || 'Assessment',
+        course_code: (targetAssessment as any).courseCode || 'GEN101',
+        topic: (targetAssessment as any).topic || 'General',
+        difficulty: 'medium'
+      },
+      proctoring: {
+        tab_switch_count: tabSwitchCount,
+        risk_level: tabSwitchCount > 3 ? 'FLAGGED' : 'VERIFIED CLEAN'
+      },
+      completion_time: new Date().toLocaleTimeString(),
+      submitted_at: new Date().toISOString(),
+      questions: targetAssessment.questions.map((q) => {
+        const userAnsIdx = userAnswers[q.id];
+        return {
+          id: q.id,
+          text: q.text,
+          options: q.options.map((optText, optIdx) => ({
+            text: optText,
+            is_correct: optIdx === q.correctOptionIndex
+          })),
+          bloom_level: bloomMap[q.cognitiveLevel] || 'Remember',
+          unit_number: (q as any).unitNumber || 1,
+          topic: (q as any).topic || 'General Topic',
+          co_code: (q as any).coCode || 'CO1',
+          user_answer: userAnsIdx !== undefined ? userAnsIdx : null,
+          is_user_correct: userAnsIdx !== undefined && userAnsIdx === q.correctOptionIndex,
+          correct_answer: q.correctOptionIndex,
+          marks: q.points || 1.0
+        };
+      })
+    };
+
+    // Send payload to backend asynchronously
+    fetch('http://localhost:8000/api/assessments/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pgPayload)
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        console.log('Successfully persisted attempt to PostgreSQL:', data);
+      })
+      .catch((err) => {
+        console.error('Error saving attempt to PostgreSQL:', err);
+      });
+
     toast.success('Exam submitted successfully! Redirecting to score review...');
 
     setTimeout(() => {

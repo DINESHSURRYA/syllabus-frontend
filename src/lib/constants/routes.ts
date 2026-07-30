@@ -15,9 +15,8 @@ export const ROUTES = {
   ANALYTICS: '/analytics',
   EVALUATOR: {
     INDEX: '/evaluator',
-    UPLOAD: '/evaluator/upload',
     INTERVIEW: '/evaluator/interview',
-    REPORT: (threadId: string) => `/evaluator/report/${threadId}`,
+    REPORT: (id?: string) => id ? `/evaluator/report?id=${id}` : '/evaluator/report',
     ADMIN: '/evaluator/admin',
     TRANSCRIPT: (threadId: string) => `/evaluator/admin/transcript/${threadId}`,
     AUDIT_LOGS: '/evaluator/audit-logs',

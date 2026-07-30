@@ -14,8 +14,11 @@ export interface GeneratedQuestion {
 
 export interface Evaluation {
   score: number;
-  feedback: string;
+  feedback?: string;
+  assessment_confidence?: string;
 }
+
+export type EvaluatorReport = InterviewReport;
 
 export interface CommunicationSkills {
   articulation?: string;
@@ -61,6 +64,8 @@ export interface InterviewReport {
   key_strengths?: string[];
   priority_improvement_areas?: string[];
   final_summary?: string;
+  overall_score?: number;
+  overall_rating?: string;
 }
 
 export interface UploadResponse {
@@ -100,10 +105,15 @@ export interface StopInterviewResponse {
 
 export interface AdminInterviewSummary {
   thread_id: string;
+  candidate_id?: string;
+  candidate_name?: string;
+  assessment_name?: string;
   topic: string;
   overall_understanding: string;
   summary: string;
   stop_reason: string;
+  overall_score?: number;
+  created_at?: string;
 }
 
 export interface AdminInterviewsResponse {
@@ -114,10 +124,11 @@ export interface AdminInteractionEntry {
   thread_id: string;
   question: { question: string };
   student_answer: string;
-  evaluation: { score: number };
-  knowledge_state_snapshot: Record<string, string>;
-  question_count: number;
-  current_topic: string;
+  evaluation: Evaluation;
+  knowledge_state_snapshot?: Record<string, string>;
+  question_count?: number;
+  current_topic?: string;
+  state_given_to_questioning_agent?: any;
 }
 
 export interface AdminInterviewDetailResponse {
@@ -148,11 +159,11 @@ export async function uploadContextFile(file: File): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append('file', file);
 
-  return client.post<UploadResponse>(API.evaluator.upload, formData);
+  return client.post<UploadResponse>(API.evaluator.upload, formData, { timeout: 300000 });
 }
 
 export async function startInterview(contextId: string): Promise<StartInterviewResponse> {
-  return client.post<StartInterviewResponse>(API.evaluator.startInterview, { context_id: contextId });
+  return client.post<StartInterviewResponse>(API.evaluator.startInterview, { context_id: contextId }, { timeout: 300000 });
 }
 
 export async function submitAnswer(
@@ -164,7 +175,7 @@ export async function submitAnswer(
     thread_id: threadId,
     student_answer: studentAnswer,
     time_taken_seconds: timeTakenSeconds,
-  });
+  }, { timeout: 300000 });
 }
 
 export interface AttendedCandidate {
@@ -182,27 +193,27 @@ export interface AttendedCandidatesResponse {
 }
 
 export async function stopInterview(threadId: string): Promise<StopInterviewResponse> {
-  return client.post<StopInterviewResponse>(API.evaluator.stopInterview, { thread_id: threadId });
+  return client.post<StopInterviewResponse>(API.evaluator.stopInterview, { thread_id: threadId }, { timeout: 300000 });
 }
 
 export async function fetchAdminInterviews(): Promise<AdminInterviewsResponse> {
-  return client.get<AdminInterviewsResponse>(API.evaluator.adminInterviews);
+  return client.get<AdminInterviewsResponse>(API.evaluator.adminInterviews, { timeout: 300000 });
 }
 
 export async function fetchAdminInterviewDetail(threadId: string): Promise<AdminInterviewDetailResponse> {
-  return client.get<AdminInterviewDetailResponse>(API.evaluator.adminInterviewDetail(threadId));
+  return client.get<AdminInterviewDetailResponse>(API.evaluator.adminInterviewDetail(threadId), { timeout: 300000 });
 }
 
 export async function fetchAdminLogs(): Promise<AdminLogsResponse> {
-  return client.get<AdminLogsResponse>(API.evaluator.adminLogs);
+  return client.get<AdminLogsResponse>(API.evaluator.adminLogs, { timeout: 300000 });
 }
 
 export async function sendChat(prompt: string, history: any[] = []): Promise<ChatResponse> {
-  return client.post<ChatResponse>(API.evaluator.chat, { prompt, history });
+  return client.post<ChatResponse>(API.evaluator.chat, { prompt, history }, { timeout: 300000 });
 }
 
 export async function uploadJsonPayload(payload: any): Promise<UploadResponse> {
-  return client.post<UploadResponse>('/api/evaluator/upload_json', payload);
+  return client.post<UploadResponse>('/api/evaluator/upload_json', payload, { timeout: 300000 });
 }
 
 export async function fetchAttendedCandidates(): Promise<AttendedCandidatesResponse> {
@@ -212,4 +223,135 @@ export async function fetchAttendedCandidates(): Promise<AttendedCandidatesRespo
 export async function fetchAttendedAssessmentSnapshot(candidateId: string, assessmentCode: string): Promise<any> {
   return client.get<any>(API.assessment.attendedDetail(candidateId, assessmentCode));
 }
+
+// ==================== PHASE 3 AI INTERVIEW ENGINE TYPED APIS ====================
+
+export interface InterviewCandidate {
+  id: string;
+  candidate_code: string;
+  name: string;
+  email?: string;
+  department: string;
+  course_batch?: string;
+  completed_assessments_count: number;
+}
+
+export interface CandidateAssessmentAttempt {
+  attempt_id: string;
+  assessment_id: string;
+  assessment_name: string;
+  course_code: string;
+  assessment_description?: string;
+  attempt_number: number;
+  status: string;
+  score: number;
+  percentage: number;
+  pass_status: string;
+  assessment_date: string;
+}
+
+export interface Phase3InterviewQuestion {
+  question_number: number;
+  question_text: string;
+  target_concept: string;
+  bloom_level: string;
+  expected_difficulty?: string;
+  expected_answer?: string;
+  candidate_answer?: string;
+  score?: number;
+  time_taken_seconds?: number;
+  evaluation?: any;
+}
+
+export interface GenerateAIInterviewResponse {
+  status: string;
+  interview_id: string;
+  candidate_id: string;
+  candidate_name: string;
+  assessment_id: string;
+  assessment_name: string;
+  total_questions: number;
+  interview_plan: any;
+  questions: Phase3InterviewQuestion[];
+  created_at: string;
+}
+
+export interface InterviewAnswerResponse {
+  status: string;
+  interview_id: string;
+  question_number: number;
+  recorded: boolean;
+  next_question_number?: number;
+  is_last_question: boolean;
+}
+
+export interface InterviewDiagnosticReport {
+  status: string;
+  interview_id: string;
+  overall_score: number;
+  overall_rating: string;
+  topic_report: Record<string, any>;
+  unit_report: Record<string, any>;
+  co_report: Record<string, any>;
+  bloom_report: Record<string, any>;
+  reasoning_profile: Record<string, any>;
+  communication_profile: Record<string, any>;
+  knowledge_gaps: string[];
+  strong_areas: string[];
+  recommendations: any[];
+  question_evaluations: any[];
+}
+
+export async function fetchInterviewCandidates(query?: string): Promise<{ candidates: InterviewCandidate[] }> {
+  const url = query ? `/api/evaluator/phase2/candidates?query=${encodeURIComponent(query)}` : `/api/evaluator/phase2/candidates`;
+  return client.get<{ candidates: InterviewCandidate[] }>(url).catch(() => {
+    const fallbackUrl = query ? `${API.interview.candidates}?query=${encodeURIComponent(query)}` : API.interview.candidates;
+    return client.get<{ candidates: InterviewCandidate[] }>(fallbackUrl);
+  });
+}
+
+export async function fetchCandidateAssessments(candidateId: string): Promise<{ assessments: CandidateAssessmentAttempt[] }> {
+  return client.get<{ assessments: CandidateAssessmentAttempt[] }>(API.interview.candidateAssessments(candidateId));
+}
+
+export async function generateAIInterview(candidateId: string, attemptId: string): Promise<GenerateAIInterviewResponse> {
+  return client.post<GenerateAIInterviewResponse>(
+    API.interview.generate,
+    {
+      candidate_id: candidateId,
+      attempt_id: attemptId,
+    },
+    { timeout: 300000 }
+  );
+}
+
+export async function fetchInterviewState(interviewId: string): Promise<any> {
+  return client.get<any>(API.interview.getById(interviewId), { timeout: 300000 });
+}
+
+export async function submitInterviewQuestionAnswer(
+  interviewId: string,
+  questionNumber: number,
+  answer: string,
+  timeTakenSeconds: number = 0
+): Promise<InterviewAnswerResponse> {
+  return client.post<InterviewAnswerResponse>(
+    API.interview.answer(interviewId),
+    {
+      question_number: questionNumber,
+      candidate_answer: answer,
+      time_taken_seconds: timeTakenSeconds,
+    },
+    { timeout: 300000 }
+  );
+}
+
+export async function completeAIInterview(interviewId: string): Promise<InterviewDiagnosticReport> {
+  return client.post<InterviewDiagnosticReport>(API.interview.complete(interviewId), {}, { timeout: 300000 });
+}
+
+export async function fetchInterviewDiagnosticReport(interviewId: string): Promise<InterviewDiagnosticReport> {
+  return client.get<InterviewDiagnosticReport>(API.interview.report(interviewId), { timeout: 300000 });
+}
+
 
