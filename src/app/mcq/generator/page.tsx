@@ -76,6 +76,53 @@ interface CourseOption {
   }>;
 }
 
+function normalizeCourseOption(course: CourseOption, courseIdx: number = 0): CourseOption {
+  const cId = course.id || course.courseCode || `course-${courseIdx}`;
+  const rawUnits = course.content?.units || course.units || [];
+
+  const normalizedUnits = rawUnits.map((u, uIdx) => {
+    const unitId = u.id || `${cId}-u-${u.unit_number || uIdx + 1}`;
+    const rawTopics = u.topics || [];
+
+    const normalizedTopics = rawTopics.map((t: any, tIdx: number) => {
+      const topicId = t.id || `${unitId}-t-${tIdx + 1}`;
+      const topicTitle = t.title || t.name || `Topic ${tIdx + 1}`;
+      const rawSubtopics = t.subtopics || [];
+
+      const normalizedSubtopics = rawSubtopics.map((st: any, stIdx: number) => {
+        const subId = typeof st === 'object' && st.id ? st.id : `${topicId}-st-${stIdx + 1}`;
+        const subTitle = typeof st === 'string' ? st : st.title || st.name || `Subtopic ${stIdx + 1}`;
+        const subBloom = typeof st === 'object' && st.bloom ? st.bloom : 'K2';
+
+        return {
+          id: subId,
+          title: subTitle,
+          bloom: subBloom,
+        };
+      });
+
+      return {
+        id: topicId,
+        title: topicTitle,
+        subtopics: normalizedSubtopics,
+      };
+    });
+
+    return {
+      id: unitId,
+      title: u.title || `Unit ${u.unit_number || uIdx + 1}`,
+      unit_number: u.unit_number || uIdx + 1,
+      topics: normalizedTopics,
+    };
+  });
+
+  return {
+    ...course,
+    id: cId,
+    units: normalizedUnits,
+  };
+}
+
 export default function MCQGeneratorPage() {
   const router = useRouter();
   const { syllabus } = useSyllabusStore();
@@ -94,10 +141,10 @@ export default function MCQGeneratorPage() {
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
   const [loadingSyllabus, setLoadingSyllabus] = useState<boolean>(true);
 
-  // Cascading Selection States
+  // Cascading Multi-Selection States
   const [selectedUnitId, setSelectedUnitId] = useState<string>('');
-  const [selectedTopicId, setSelectedTopicId] = useState<string>('');
-  const [selectedSubtopicId, setSelectedSubtopicId] = useState<string>('');
+  const [selectedTopicIds, setSelectedTopicIds] = useState<string[]>([]);
+  const [selectedSubtopicIds, setSelectedSubtopicIds] = useState<string[]>([]);
   const [customTopic, setCustomTopic] = useState<string>('');
 
   // Form states
@@ -225,8 +272,9 @@ export default function MCQGeneratorPage() {
           : [];
 
         if (items.length > 0) {
-          setCoursesList(items);
-          const firstCourse = items[0];
+          const normalized = items.map((c, i) => normalizeCourseOption(c, i));
+          setCoursesList(normalized);
+          const firstCourse = normalized[0];
           const firstId = firstCourse.id || firstCourse.courseCode;
           setSelectedCourseId(firstId);
           initializeCascadingSelections(firstCourse);
@@ -252,19 +300,25 @@ export default function MCQGeneratorPage() {
               })),
             })),
           };
-          setCoursesList([storeCourse, ...defaultDemoCourses]);
-          setSelectedCourseId(storeCourse.id);
-          initializeCascadingSelections(storeCourse);
+          const normalized = [
+            normalizeCourseOption(storeCourse, 0),
+            ...defaultDemoCourses.map((c, i) => normalizeCourseOption(c, i + 1)),
+          ];
+          setCoursesList(normalized);
+          setSelectedCourseId(normalized[0].id);
+          initializeCascadingSelections(normalized[0]);
         } else {
-          setCoursesList(defaultDemoCourses);
-          const firstCourse = defaultDemoCourses[0];
+          const normalized = defaultDemoCourses.map((c, i) => normalizeCourseOption(c, i));
+          setCoursesList(normalized);
+          const firstCourse = normalized[0];
           setSelectedCourseId(firstCourse.id);
           initializeCascadingSelections(firstCourse);
         }
       } catch (err) {
         console.warn('Failed to fetch API syllabus list, using local defaults:', err);
-        setCoursesList(defaultDemoCourses);
-        const firstCourse = defaultDemoCourses[0];
+        const normalized = defaultDemoCourses.map((c, i) => normalizeCourseOption(c, i));
+        setCoursesList(normalized);
+        const firstCourse = normalized[0];
         setSelectedCourseId(firstCourse.id);
         initializeCascadingSelections(firstCourse);
       } finally {
@@ -314,21 +368,104 @@ export default function MCQGeneratorPage() {
   const initializeCascadingSelections = (course: CourseOption) => {
     const units = course?.content?.units || course?.units || [];
     if (units.length > 0) {
-      setSelectedUnitId(units[0].id);
-      const firstTopic = units[0].topics?.[0];
-      if (firstTopic) {
-        setSelectedTopicId(firstTopic.id);
-        const firstSubtopic = firstTopic.subtopics?.[0];
-        setSelectedSubtopicId(firstSubtopic?.id || '');
+      const firstUnit = units[0];
+      setSelectedUnitId(firstUnit.id);
+      const topics = firstUnit.topics || [];
+      if (topics.length > 0) {
+        const firstTopic = topics[0];
+        setSelectedTopicIds([firstTopic.id]);
+        const firstSub = firstTopic.subtopics?.[0];
+        if (firstSub) {
+          setSelectedSubtopicIds([firstSub.id]);
+        } else {
+          setSelectedSubtopicIds([]);
+        }
       } else {
-        setSelectedTopicId('');
-        setSelectedSubtopicId('');
+        setSelectedTopicIds([]);
+        setSelectedSubtopicIds([]);
       }
     } else {
       setSelectedUnitId('');
-      setSelectedTopicId('');
-      setSelectedSubtopicId('');
+      setSelectedTopicIds([]);
+      setSelectedSubtopicIds([]);
     }
+  };
+
+  const handleUnitSelect = (unitId: string) => {
+    setSelectedUnitId(unitId);
+    const unit = unitsList.find((u) => u.id === unitId);
+    const topics = unit?.topics || [];
+    if (topics.length > 0) {
+      const firstTopic = topics[0];
+      setSelectedTopicIds([firstTopic.id]);
+      const firstSub = firstTopic.subtopics?.[0];
+      if (firstSub) {
+        setSelectedSubtopicIds([firstSub.id]);
+      } else {
+        setSelectedSubtopicIds([]);
+      }
+    } else {
+      setSelectedTopicIds([]);
+      setSelectedSubtopicIds([]);
+    }
+  };
+
+  const handleToggleTopic = (topicId: string) => {
+    setSelectedTopicIds((prev) => {
+      const isSelected = prev.includes(topicId);
+      let nextTopicIds: string[];
+      if (isSelected) {
+        nextTopicIds = prev.filter((id) => id !== topicId);
+      } else {
+        nextTopicIds = [...prev, topicId];
+      }
+
+      const targetTopic = topicsList.find((t) => t.id === topicId);
+      const targetSubIds = (targetTopic?.subtopics || []).map((s) => s.id);
+
+      if (isSelected) {
+        setSelectedSubtopicIds((prevSubs) => prevSubs.filter((id) => !targetSubIds.includes(id)));
+      } else {
+        const firstSub = targetSubIds[0];
+        if (firstSub) {
+          setSelectedSubtopicIds((prevSubs) => Array.from(new Set([...prevSubs, firstSub])));
+        }
+      }
+
+      return nextTopicIds;
+    });
+  };
+
+  const handleSelectAllTopics = () => {
+    const allTopicIds = topicsList.map((t) => t.id);
+    setSelectedTopicIds(allTopicIds);
+    const allSubtopicIds: string[] = [];
+    topicsList.forEach((t) => {
+      (t.subtopics || []).forEach((s) => allSubtopicIds.push(s.id));
+    });
+    setSelectedSubtopicIds(allSubtopicIds);
+  };
+
+  const handleClearAllTopics = () => {
+    setSelectedTopicIds([]);
+    setSelectedSubtopicIds([]);
+  };
+
+  const handleToggleSubtopic = (subtopicId: string) => {
+    setSelectedSubtopicIds((prev) =>
+      prev.includes(subtopicId)
+        ? prev.filter((id) => id !== subtopicId)
+        : [...prev, subtopicId]
+    );
+  };
+
+  const handleSelectAllSubtopics = () => {
+    const allSubIds = availableSubtopics.map((s) => s.id);
+    setSelectedSubtopicIds(allSubIds);
+  };
+
+  const handleClearAllSubtopics = () => {
+    setSelectedSubtopicIds([]);
   };
 
   const currentCourse = useMemo(() => {
@@ -349,22 +486,39 @@ export default function MCQGeneratorPage() {
     return currentUnit?.topics || [];
   }, [currentUnit]);
 
-  const currentTopic = useMemo(() => {
-    return topicsList.find((t) => t.id === selectedTopicId) || topicsList[0];
-  }, [topicsList, selectedTopicId]);
-
-  const subtopicsList = useMemo(() => {
-    return currentTopic?.subtopics || [];
-  }, [currentTopic]);
+  const availableSubtopics = useMemo(() => {
+    const selectedTopics = topicsList.filter((t) => selectedTopicIds.includes(t.id));
+    const result: Array<{ id: string; title: string; bloom?: string; topicTitle: string }> = [];
+    selectedTopics.forEach((t) => {
+      (t.subtopics || []).forEach((s) => {
+        result.push({ ...s, topicTitle: t.title });
+      });
+    });
+    return result;
+  }, [topicsList, selectedTopicIds]);
 
   const activeTopicName = useMemo(() => {
     if (customTopic.trim()) return customTopic.trim();
-    const sub = subtopicsList.find((s) => s.id === selectedSubtopicId);
-    if (sub) return sub.title;
-    if (currentTopic) return currentTopic.title;
+
+    const selectedSubNames = availableSubtopics
+      .filter((s) => selectedSubtopicIds.includes(s.id))
+      .map((s) => s.title);
+
+    if (selectedSubNames.length > 0) {
+      return selectedSubNames.join(', ');
+    }
+
+    const selectedTopicNames = topicsList
+      .filter((t) => selectedTopicIds.includes(t.id))
+      .map((t) => t.title);
+
+    if (selectedTopicNames.length > 0) {
+      return selectedTopicNames.join(', ');
+    }
+
     if (currentUnit) return currentUnit.title;
     return currentCourse?.courseName || 'General Topic';
-  }, [customTopic, selectedSubtopicId, subtopicsList, currentTopic, currentUnit, currentCourse]);
+  }, [customTopic, availableSubtopics, selectedSubtopicIds, topicsList, selectedTopicIds, currentUnit, currentCourse]);
 
   // Total assigned questions counter
   const totalAssigned = Object.values(bloomMatrix).reduce((a, b) => a + b, 0);
@@ -405,7 +559,7 @@ export default function MCQGeneratorPage() {
     const payload = {
       topic: activeTopicName,
       difficulty: difficulty.toLowerCase(),
-      description: `Course: ${currentCourse?.courseCode || ''} | Unit: ${selectedUnitId || ''} | Topic: ${selectedTopicId || ''}`,
+      description: `Course: ${currentCourse?.courseCode || ''} | Unit: ${selectedUnitId || ''} | Topics: ${selectedTopicIds.length}/${topicsList.length} | Subtopics: ${selectedSubtopicIds.length}/${availableSubtopics.length}`,
       question_count: questionCount,
       type: 'mcq',
       language: 'en',
@@ -773,15 +927,8 @@ export default function MCQGeneratorPage() {
                           </label>
                           <select
                             value={selectedUnitId}
-                            onChange={(e) => {
-                              const unitId = e.target.value;
-                              setSelectedUnitId(unitId);
-                              const unit = unitsList.find((u) => u.id === unitId);
-                              const firstTopic = unit?.topics?.[0];
-                              setSelectedTopicId(firstTopic?.id || '');
-                              setSelectedSubtopicId(firstTopic?.subtopics?.[0]?.id || '');
-                            }}
-                            className="w-full rounded-2xl border border-slate-300 dark:border-white/15 bg-slate-50 dark:bg-slate-900 px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
+                            onChange={(e) => handleUnitSelect(e.target.value)}
+                            className="w-full rounded-2xl border border-slate-300 dark:border-white/15 bg-slate-50 dark:bg-slate-900 px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none font-medium"
                           >
                             {unitsList.map((u) => (
                               <option key={u.id} value={u.id}>
@@ -792,48 +939,161 @@ export default function MCQGeneratorPage() {
                         </div>
                       )}
 
-                      {/* Step 3: Topic Selection */}
-                      {topicsList.length > 0 && (
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                            <FileText size={13} className="text-indigo-500" /> 3. Topic Selection
-                          </label>
-                          <select
-                            value={selectedTopicId}
-                            onChange={(e) => {
-                              const topicId = e.target.value;
-                              setSelectedTopicId(topicId);
-                              const topic = topicsList.find((t) => t.id === topicId);
-                              setSelectedSubtopicId(topic?.subtopics?.[0]?.id || '');
-                            }}
-                            className="w-full rounded-2xl border border-slate-300 dark:border-white/15 bg-slate-50 dark:bg-slate-900 px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
-                          >
-                            {topicsList.map((t) => (
-                              <option key={t.id} value={t.id}>
-                                {t.title}
-                              </option>
-                            ))}
-                          </select>
+                      {/* Step 3: Multi-Topic Selection */}
+                      {topicsList.length > 0 && (() => {
+                        const selectedTopicsCount = topicsList.filter((t) => selectedTopicIds.includes(t.id)).length;
+                        return (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                                <FileText size={13} className="text-indigo-500" /> 3. Select Topics ({selectedTopicsCount}/{topicsList.length})
+                              </label>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={handleSelectAllTopics}
+                                  className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400 hover:underline font-bold"
+                                >
+                                  Select All
+                                </button>
+                                <span className="text-slate-400 text-[10px]">•</span>
+                                <button
+                                  type="button"
+                                  onClick={handleClearAllTopics}
+                                  className="text-[10px] font-mono text-slate-500 hover:underline"
+                                >
+                                  Clear
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                              {topicsList.map((t) => {
+                                const isSelected = Boolean(t.id && selectedTopicIds.includes(t.id));
+                                const subCount = t.subtopics?.length || 0;
+                                return (
+                                  <div
+                                    key={t.id}
+                                    onClick={() => handleToggleTopic(t.id)}
+                                    className={`p-2.5 rounded-xl border text-xs font-medium transition-all cursor-pointer flex items-center justify-between select-none ${
+                                      isSelected
+                                        ? 'border-indigo-500/60 bg-indigo-500/10 text-slate-900 dark:text-white shadow-sm'
+                                        : 'border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/40 text-slate-600 dark:text-slate-400 hover:border-indigo-500/30'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2.5 truncate pr-2">
+                                      <div
+                                        className={`w-4 h-4 rounded-md border flex items-center justify-center transition-colors shrink-0 ${
+                                          isSelected
+                                            ? 'bg-indigo-500 border-indigo-500 text-white'
+                                            : 'border-slate-400 dark:border-slate-600 bg-transparent'
+                                        }`}
+                                      >
+                                        {isSelected && <Check size={12} strokeWidth={3} />}
+                                      </div>
+                                      <span className="truncate">{t.title}</span>
+                                    </div>
+                                    {subCount > 0 && (
+                                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 shrink-0">
+                                        {subCount} subtopic{subCount > 1 ? 's' : ''}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Step 4: Multi-Subtopic Selection */}
+                      {availableSubtopics.length > 0 ? (() => {
+                        const selectedSubtopicsCount = availableSubtopics.filter((s) => selectedSubtopicIds.includes(s.id)).length;
+                        return (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                                <Layers size={13} className="text-purple-500" /> 4. Select Subtopics / Concepts ({selectedSubtopicsCount}/{availableSubtopics.length})
+                              </label>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={handleSelectAllSubtopics}
+                                  className="text-[10px] font-mono text-cyan-600 dark:text-cyan-400 hover:underline font-bold"
+                                >
+                                  Select All
+                                </button>
+                                <span className="text-slate-400 text-[10px]">•</span>
+                                <button
+                                  type="button"
+                                  onClick={handleClearAllSubtopics}
+                                  className="text-[10px] font-mono text-slate-500 hover:underline"
+                                >
+                                  Clear
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-1.5 max-h-52 overflow-y-auto pr-1">
+                              {availableSubtopics.map((s) => {
+                                const isSelected = Boolean(s.id && selectedSubtopicIds.includes(s.id));
+                                return (
+                                  <div
+                                    key={s.id}
+                                    onClick={() => handleToggleSubtopic(s.id)}
+                                    className={`p-2.5 rounded-xl border text-xs font-medium transition-all cursor-pointer flex items-center justify-between select-none ${
+                                      isSelected
+                                        ? 'border-purple-500/60 bg-purple-500/10 text-slate-900 dark:text-white shadow-sm'
+                                        : 'border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/40 text-slate-600 dark:text-slate-400 hover:border-purple-500/30'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2.5 truncate pr-2">
+                                      <div
+                                        className={`w-4 h-4 rounded-md border flex items-center justify-center transition-colors shrink-0 ${
+                                          isSelected
+                                            ? 'bg-purple-500 border-purple-500 text-white'
+                                            : 'border-slate-400 dark:border-slate-600 bg-transparent'
+                                        }`}
+                                      >
+                                        {isSelected && <Check size={12} strokeWidth={3} />}
+                                      </div>
+                                      <div className="flex flex-col truncate">
+                                        <span className="truncate">{s.title}</span>
+                                        {selectedTopicIds.length > 1 && (
+                                          <span className="text-[10px] text-slate-400 truncate font-mono">
+                                            Topic: {s.topicTitle}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    {s.bloom && (
+                                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-600 dark:text-purple-300 font-bold shrink-0">
+                                        {s.bloom}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })() : selectedTopicIds.length > 0 ? (
+                        <div className="p-3 rounded-2xl border border-dashed border-slate-300 dark:border-white/10 text-slate-500 text-xs text-center font-mono">
+                          No subtopics available for selected topics.
+                        </div>
+                      ) : (
+                        <div className="p-3 rounded-2xl border border-dashed border-slate-300 dark:border-white/10 text-slate-500 text-xs text-center font-mono">
+                          Select one or more topics above to show subtopics.
                         </div>
                       )}
 
-                      {/* Step 4: Subtopics Selection */}
-                      {subtopicsList.length > 0 && (
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                            <Layers size={13} className="text-purple-500" /> 4. Subtopic / Concept Selection
-                          </label>
-                          <select
-                            value={selectedSubtopicId}
-                            onChange={(e) => setSelectedSubtopicId(e.target.value)}
-                            className="w-full rounded-2xl border border-slate-300 dark:border-white/15 bg-slate-50 dark:bg-slate-900 px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
-                          >
-                            {subtopicsList.map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.title} {s.bloom ? `(${s.bloom})` : ''}
-                              </option>
-                            ))}
-                          </select>
+                      {/* Selection Summary Chip */}
+                      {(selectedTopicIds.length > 0 || selectedSubtopicIds.length > 0) && (
+                        <div className="p-3 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 text-xs text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                          <span className="font-mono text-[11px] flex items-center gap-1.5">
+                            <Sparkles size={13} className="text-cyan-500" />
+                            Target Scope: <strong className="text-slate-900 dark:text-white">{selectedTopicIds.length} Topic(s)</strong> & <strong className="text-slate-900 dark:text-white">{selectedSubtopicIds.length} Subtopic(s)</strong>
+                          </span>
                         </div>
                       )}
                     </>

@@ -64,11 +64,10 @@ const mcqNavItems = [
 
 // Module 3: Diagnostic Evaluator Navigation Items
 const evaluatorNavItems = [
-  { href: '/evaluator/upload', label: 'Ingestion & Mapping', icon: GitFork, leadText: 'Ingest assessments & map concepts' },
+  { href: '/evaluator', label: 'Assessment Ingestion', icon: GitFork, leadText: 'Select candidate or upload JSON' },
   { href: '/evaluator/interview', label: 'Interactive Interview', icon: Mic, leadText: 'Diagnostic audio-visual interview' },
-  { href: '/evaluator/report/thread-101', label: 'Diagnostic Report', icon: PieChart, leadText: 'Candidate belief & mastery report' },
+  { href: '/evaluator/report', label: 'Diagnostic Report', icon: PieChart, leadText: 'Candidate belief & mastery report' },
   { href: '/evaluator/admin', label: 'Session Dashboard', icon: LayoutDashboard, leadText: 'Manage diagnostic candidate sessions' },
-  { href: '/evaluator/admin/transcript/thread-101', label: 'Audit Transcript', icon: ScrollText, leadText: 'Turn-by-turn feed & belief history' },
   { href: '/evaluator/audit-logs', label: 'LLM Audit Logs', icon: FileCode2, leadText: 'Inspect prompts, JSON & metrics' },
 ];
 
@@ -123,7 +122,7 @@ const modules: ModuleConfig[] = [
     icon: Stethoscope,
     badge: 'AI',
     colorTheme: 'indigo',
-    defaultHref: '/evaluator/upload',
+    defaultHref: '/evaluator',
     description: 'Ingestion, Audio Interview & Audit Logs',
     items: evaluatorNavItems
   },

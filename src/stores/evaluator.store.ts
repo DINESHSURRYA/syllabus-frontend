@@ -67,6 +67,7 @@ export interface CandidateAssessmentContext {
 interface EvaluatorState {
   activeSession: DiagnosticSession | null;
   selectedCandidateAssessment: CandidateAssessmentContext | null;
+  currentReport: InterviewReport | null;
   sessions: DiagnosticSession[];
   pastSessions: DiagnosticSession[];
   auditLogs: AuditLogEntry[];
@@ -178,6 +179,7 @@ export const useEvaluatorStore = create<EvaluatorState>()(
     (set, get) => ({
       activeSession: null,
       selectedCandidateAssessment: null,
+      currentReport: null,
       setSelectedCandidateAssessment: (ctx) => set({ selectedCandidateAssessment: ctx }),
       sessions: [],
       pastSessions: [],

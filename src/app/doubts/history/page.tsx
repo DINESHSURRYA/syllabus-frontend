@@ -117,14 +117,53 @@ export default function DoubtsHistoryPage() {
     }
   };
 
-  const handlePlayAudio = (id: string, e?: React.MouseEvent) => {
+  const handlePlayAudio = (item: DoubtHistoryItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (playingId === id) {
-      setIsPlaying(!isPlaying);
-    } else {
-      setPlayingId(id);
-      setIsPlaying(true);
+
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      alert("Text-to-speech voice playback is not supported in this browser.");
+      return;
     }
+
+    if (playingId === item.id) {
+      if (isPlaying) {
+        window.speechSynthesis.pause();
+        setIsPlaying(false);
+      } else {
+        window.speechSynthesis.resume();
+        setIsPlaying(true);
+      }
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const sectionsText = item.sections
+      ? item.sections.map(s => `${s.title}. ${s.content}`).join('\n')
+      : item.question;
+
+    const fullSpeechText = `Question: ${item.question}. Explanation: ${sectionsText}`
+      .replace(/[*_#`~>]/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+
+    const utterance = new SpeechSynthesisUtterance(fullSpeechText);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    utterance.onstart = () => {
+      setPlayingId(item.id);
+      setIsPlaying(true);
+    };
+    utterance.onend = () => {
+      setPlayingId(null);
+      setIsPlaying(false);
+    };
+    utterance.onerror = () => {
+      setPlayingId(null);
+      setIsPlaying(false);
+    };
+
+    window.speechSynthesis.speak(utterance);
   };
 
   // Extract unique course codes for filtering
@@ -357,15 +396,19 @@ export default function DoubtsHistoryPage() {
                       <div className="flex flex-wrap items-center gap-4 pt-2 text-xs text-[var(--text-muted)]">
                         {item.hasAudio && (
                           <div 
-                            onClick={(e) => handlePlayAudio(item.id, e)}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-500 font-semibold"
+                            onClick={(e) => handlePlayAudio(item, e)}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-semibold transition-all ${
+                              playingId === item.id && isPlaying
+                                ? 'bg-amber-500 text-black border-amber-600 shadow-md animate-pulse'
+                                : 'bg-indigo-500/10 border-indigo-500/30 text-indigo-500 hover:bg-indigo-500/20'
+                            }`}
                           >
                             {playingId === item.id && isPlaying ? (
-                              <Pause size={12} className="text-indigo-500" />
+                              <Pause size={12} className="text-black" />
                             ) : (
                               <Play size={12} className="text-indigo-500" />
                             )}
-                            <span>Audio ({item.audioDuration})</span>
+                            <span>{playingId === item.id && isPlaying ? 'Playing Voice...' : `Audio (${item.audioDuration})`}</span>
                           </div>
                         )}
 
@@ -431,13 +474,27 @@ export default function DoubtsHistoryPage() {
                   </button>
 
                   <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <span className="px-3 py-1 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-500 text-xs font-bold">
-                        {selectedItem.courseCode} — {selectedItem.courseTitle}
-                      </span>
-                      <span className="px-3 py-1 rounded-md bg-[var(--bg-subtle)] text-[var(--text-muted)] text-xs font-medium">
-                        {selectedItem.unit} • {selectedItem.topic}
-                      </span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-1 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-500 text-xs font-bold">
+                          {selectedItem.courseCode} — {selectedItem.courseTitle}
+                        </span>
+                        <span className="px-3 py-1 rounded-md bg-[var(--bg-subtle)] text-[var(--text-muted)] text-xs font-medium">
+                          {selectedItem.unit} • {selectedItem.topic}
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={() => handlePlayAudio(selectedItem)}
+                        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                          playingId === selectedItem.id && isPlaying
+                            ? 'bg-amber-500 text-black shadow-md animate-pulse'
+                            : 'bg-amber-500/15 border border-amber-500/30 text-amber-500 hover:bg-amber-500/25'
+                        }`}
+                      >
+                        <Volume2 size={16} />
+                        <span>{playingId === selectedItem.id && isPlaying ? "Pause Voice Output" : "Speech Output (Read Aloud)"}</span>
+                      </button>
                     </div>
 
                     <h2 className="text-xl sm:text-2xl font-bold text-[var(--text-primary)] leading-snug">
@@ -461,7 +518,20 @@ export default function DoubtsHistoryPage() {
 
                     {selectedItem.sections?.map((sec, idx) => (
                       <div key={idx} className="p-4 rounded-xl bg-[var(--bg-subtle)] border border-[var(--border-subtle)] space-y-2">
-                        <h4 className="font-bold text-amber-500 text-sm">{sec.title}</h4>
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-bold text-amber-500 text-sm">{sec.title}</h4>
+                          <button
+                            onClick={() => {
+                              const utteranceText = `${sec.title}. ${sec.content}`.replace(/[*_#`~>]/g, '');
+                              const utterance = new SpeechSynthesisUtterance(utteranceText);
+                              window.speechSynthesis?.cancel();
+                              window.speechSynthesis?.speak(utterance);
+                            }}
+                            className="text-[10px] font-bold text-amber-500 flex items-center gap-1 hover:underline"
+                          >
+                            <Volume2 size={12} /> Listen Section
+                          </button>
+                        </div>
                         <p className="text-sm text-[var(--text-secondary)] whitespace-pre-line leading-relaxed">{sec.content}</p>
                       </div>
                     ))}

@@ -51,6 +51,7 @@ export class CurriculumService {
     const cleanCode = (courseCode || 'COURSE101').toUpperCase().trim();
     
     const knownTitles: Record<string, string> = {
+      'BD4071': 'HIGH PERFORMANCE COMPUTING FOR BIG DATA',
       'CE3022': 'REMOTE SENSING CONCEPTS',
       'GE3451': 'ENVIRONMENTAL SCIENCES AND SUSTAINABILITY',
       'CS3451': 'OPERATING SYSTEMS',
@@ -60,6 +61,62 @@ export class CurriculumService {
     };
 
     const title = knownTitles[cleanCode] || `${cleanCode}: CORE CURRICULUM CONCEPTS`;
+
+    const isBD4071 = cleanCode.includes('BD4071');
+
+    const unit1Topics = isBD4071 ? [
+      {
+        title: `Parallel & Distributed Computing Architectures`,
+        name: `Parallel & Distributed Computing Architectures`,
+        level: 'Introductory',
+        subtopics: [
+          `Shared vs. Distributed Memory Systems`,
+          `Clusters & Symmetric Multiprocessing (SMP)`,
+          `Scalability (Scale-Up vs. Scale-Out)`
+        ]
+      },
+      {
+        title: `Performance Metrics & Laws`,
+        name: `Performance Metrics & Laws`,
+        level: 'Intermediate',
+        subtopics: [
+          `Amdahl's Law & Speedup Calculations`,
+          `Gustafson's Law & Scaled Speedup`,
+          `Efficiency & Latency vs. Throughput Bottlenecks`
+        ]
+      },
+      {
+        title: `Data-Intensive vs. Compute-Intensive Frameworks`,
+        name: `Data-Intensive vs. Compute-Intensive Frameworks`,
+        level: 'Advanced',
+        subtopics: [
+          `Fundamentals of Processing Massive Datasets`,
+          `Memory Management & Parallel Storage Hierarchy`,
+          `I/O Bottlenecks & Network Bandwidth in HPC Systems`
+        ]
+      }
+    ] : [
+      {
+        title: `Fundamental Concepts & Architecture of ${cleanCode}`,
+        name: `Fundamental Concepts & Architecture of ${cleanCode}`,
+        level: 'Introductory',
+        subtopics: [
+          `Historical Evolution & Scope of ${cleanCode}`,
+          `Core Structural Definitions & Theoretical Models`,
+          `System Classifications & Operational Boundaries`
+        ]
+      },
+      {
+        title: `Mathematical & Formal Frameworks`,
+        name: `Mathematical & Formal Frameworks`,
+        level: 'Intermediate',
+        subtopics: [
+          `Analytical Formulations & Vector Representations`,
+          `Boundary Conditions & Domain Constraints`,
+          `Error Metrics & Signal Interpretation`
+        ]
+      }
+    ];
 
     return {
       id: cleanCode,
@@ -104,31 +161,10 @@ export class CurriculumService {
         {
           unit_number: 1,
           unitNumber: 1,
-          title: `Unit I: Principles & Theoretical Foundations of ${title}`,
+          title: `Unit I: ${isBD4071 ? 'Parallel & High Performance Computing Architectures' : 'Principles & Theoretical Foundations of ' + title}`,
           hours: 10,
           learningHours: 10,
-          topics: [
-            {
-              title: `Fundamental Concepts & Architecture of ${cleanCode}`,
-              name: `Fundamental Concepts & Architecture of ${cleanCode}`,
-              level: 'Introductory',
-              subtopics: [
-                `Historical Evolution & Scope of ${cleanCode}`,
-                `Core Structural Definitions & Theoretical Models`,
-                `System Classifications & Operational Boundaries`
-              ]
-            },
-            {
-              title: `Mathematical & Formal Frameworks`,
-              name: `Mathematical & Formal Frameworks`,
-              level: 'Intermediate',
-              subtopics: [
-                `Analytical Formulations & Vector Representations`,
-                `Boundary Conditions & Domain Constraints`,
-                `Error Metrics & Signal Interpretation`
-              ]
-            }
-          ]
+          topics: unit1Topics
         },
         {
           unit_number: 2,

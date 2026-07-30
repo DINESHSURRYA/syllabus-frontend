@@ -16,10 +16,18 @@ import './styles/index.css';
  * color theme. Do NOT hardcode colors.
  */
 
+// ── eVALUATOR-inspired components (Phase 3 redesign) ──────────
+export { ProgressThread } from './ProgressThread';
+export { FileDropzone } from './FileDropzone';
+export { InterviewerTile } from './InterviewerTile';
+export { CallControls } from './CallControls';
+export { ResponsePanel } from './ResponsePanel';
+export { ReportScreen } from './ReportScreen';
 
 import React, { ReactNode } from 'react';
 import { LucideIcon, Bot } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
 
 // ============================================================
 // EvaluatorPageHeader

@@ -110,4 +110,14 @@ export const API = {
   dashboard: {
     stats: '/api/analytics/dashboard',
   },
+
+  interview: {
+    candidates: '/api/interview/candidates',
+    candidateAssessments: (candidateId: string) => `/api/interview/candidate/${encodeURIComponent(candidateId)}/assessments`,
+    generate: '/api/interview/generate',
+    getById: (id: string) => `/api/interview/${encodeURIComponent(id)}`,
+    answer: (id: string) => `/api/interview/${encodeURIComponent(id)}/answer`,
+    complete: (id: string) => `/api/interview/${encodeURIComponent(id)}/complete`,
+    report: (id: string) => `/api/interview/${encodeURIComponent(id)}/report`,
+  },
 } as const;

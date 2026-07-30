@@ -71,105 +71,113 @@ export default function TopicWiseQAPage() {
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
 
-  // Load dynamic syllabus and doubt Q&As from localStorage / store
+  // Load dynamic syllabus and doubt Q&As from backend API & localStorage
   useEffect(() => {
-    try {
-      const savedDraft = localStorage.getItem('syllabus_draft_data');
-      const savedDoubts = localStorage.getItem('syllabus_doubts_history');
-      
+    const loadTopicsData = async () => {
+      const apiBase = process.env.NEXT_PUBLIC_RAG_API_URL || "http://127.0.0.1:8000";
       const dynamicCourses: CourseTopicsData[] = [];
 
-      // Extract units and topics from uploaded syllabus draft if available
-      if (savedDraft) {
-        const parsed = JSON.parse(savedDraft);
-        const code = parsed.course?.code || 'SYLLABUS_COURSE';
-        const title = parsed.course?.title || 'Extracted Course Syllabus';
-        const unitsList = parsed.units || [];
-
-        const units: UnitGroup[] = unitsList.map((u: any, uIdx: number) => {
-          const unitId = u.title?.split(':')[0] || `Unit ${uIdx + 1}`;
-          const unitTitle = u.title?.includes(':') ? u.title.split(':')[1].trim() : u.title || `Unit ${uIdx + 1}`;
-          
-          const topics: TopicGroup[] = (u.topics || []).map((t: any, tIdx: number) => ({
-            topicId: `top_${uIdx}_${tIdx}`,
-            topicName: typeof t === 'string' ? t : t.title || `Topic ${tIdx + 1}`,
-            questions: []
-          }));
-
-          return { unitId, unitTitle, topics };
-        });
-
-        if (units.length > 0) {
-          dynamicCourses.push({ courseCode: code, courseTitle: title, units });
+      // 1. Fetch real courses from Backend PostgreSQL API
+      try {
+        const res = await fetch(`${apiBase}/api/courses`);
+        if (res.ok) {
+          const list = await res.json();
+          if (Array.isArray(list)) {
+            for (const item of list) {
+              const cid = item.id || item.courseCode || item.code;
+              if (!cid) continue;
+              try {
+                const cRes = await fetch(`${apiBase}/api/courses/${cid}`);
+                if (cRes.ok) {
+                  const cDetail = await cRes.json();
+                  const units: UnitGroup[] = (cDetail.units || []).map((u: any, uIdx: number) => ({
+                    unitId: `Unit ${u.unitNumber || uIdx + 1}`,
+                    unitTitle: u.title || `Unit ${uIdx + 1}`,
+                    topics: (u.topics || []).map((t: any, tIdx: number) => ({
+                      topicId: t.id || `top_${uIdx}_${tIdx}`,
+                      topicName: typeof t === 'string' ? t : (t.title || String(t)),
+                      questions: []
+                    }))
+                  }));
+                  dynamicCourses.push({
+                    courseCode: cDetail.courseCode || cid,
+                    courseTitle: cDetail.courseTitle || cDetail.courseName || cid,
+                    units
+                  });
+                }
+              } catch (e) {
+                console.warn(`Could not fetch details for course ${cid}`, e);
+              }
+            }
+          }
         }
+      } catch (err) {
+        console.warn("Backend topics fetch attempt:", err);
       }
 
-      // Map saved doubt items into matching units/topics if available
-      if (savedDoubts && dynamicCourses.length > 0) {
-        const historyItems = JSON.parse(savedDoubts);
-        if (Array.isArray(historyItems)) {
-          historyItems.forEach((item: any) => {
-            const course = dynamicCourses[0];
-            if (course && course.units[0] && course.units[0].topics[0]) {
-              course.units[0].topics[0].questions.push({
-                id: item.id || `q_${Date.now()}`,
-                question: item.question,
-                difficulty: 'Medium',
-                bloomsLevel: 'Understand',
-                answerSummary: item.sections?.[0]?.content || 'AI generated structured explanation.',
-                detailedPoints: item.sections?.slice(1).map((s: any) => s.content) || [],
-                audioDuration: item.audioDuration || '01:30'
-              });
-            }
+      // 2. Extract units and topics from uploaded syllabus draft if available
+      try {
+        const savedDraft = localStorage.getItem('syllabus_draft_data');
+        if (savedDraft) {
+          const parsed = JSON.parse(savedDraft);
+          const code = parsed.course?.code || 'SYLLABUS_COURSE';
+          const title = parsed.course?.title || 'Extracted Course Syllabus';
+          const unitsList = parsed.units || [];
+
+          const units: UnitGroup[] = unitsList.map((u: any, uIdx: number) => {
+            const unitId = u.title?.split(':')[0] || `Unit ${uIdx + 1}`;
+            const unitTitle = u.title?.includes(':') ? u.title.split(':')[1].trim() : u.title || `Unit ${uIdx + 1}`;
+            
+            const topics: TopicGroup[] = (u.topics || []).map((t: any, tIdx: number) => ({
+              topicId: `top_${uIdx}_${tIdx}`,
+              topicName: typeof t === 'string' ? t : t.title || `Topic ${tIdx + 1}`,
+              questions: []
+            }));
+
+            return { unitId, unitTitle, topics };
           });
+
+          if (units.length > 0 && !dynamicCourses.some(c => c.courseCode === code)) {
+            dynamicCourses.push({ courseCode: code, courseTitle: title, units });
+          }
         }
+      } catch (e) {
+        console.error("Failed loading local draft topics", e);
+      }
+
+      // 3. Map resolved user doubt items into topics
+      try {
+        const savedDoubts = localStorage.getItem('syllabus_doubts_history');
+        if (savedDoubts && dynamicCourses.length > 0) {
+          const historyItems = JSON.parse(savedDoubts);
+          if (Array.isArray(historyItems)) {
+            historyItems.forEach((item: any) => {
+              const matchedCourse = dynamicCourses.find(c => c.courseCode === item.courseCode) || dynamicCourses[0];
+              if (matchedCourse && matchedCourse.units[0] && matchedCourse.units[0].topics[0]) {
+                matchedCourse.units[0].topics[0].questions.push({
+                  id: item.id || `q_${Date.now()}`,
+                  question: item.question,
+                  difficulty: 'Medium',
+                  bloomsLevel: 'Understand (K2)',
+                  answerSummary: item.sections?.[0]?.content || 'AI generated structured explanation.',
+                  detailedPoints: item.sections?.slice(1).map((s: any) => s.content) || [],
+                  audioDuration: item.audioDuration || '01:30'
+                });
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.error("Failed mapping doubt history to topics", e);
       }
 
       setCoursesData(dynamicCourses);
-    } catch (e) {
-      console.error("Failed building dynamic topic Q&As", e);
-    } finally {
       setIsLoaded(true);
-    }
+    };
+
+    loadTopicsData();
   }, []);
 
-  // Demo Seeder for user preview if no syllabus uploaded yet
-  const handleSeedDemoData = () => {
-    const demoData: CourseTopicsData[] = [
-      {
-        courseCode: "CS8691",
-        courseTitle: "Artificial Intelligence & Machine Learning",
-        units: [
-          {
-            unitId: "Unit I",
-            unitTitle: "ML Basics & Learning Paradigms",
-            topics: [
-              {
-                topicId: "top_1_1",
-                topicName: "1.1 Supervised vs Unsupervised Learning",
-                questions: [
-                  {
-                    id: "q_101",
-                    question: "What is the primary difference between Supervised and Unsupervised Learning?",
-                    difficulty: "Easy",
-                    bloomsLevel: "Understand (K2)",
-                    answerSummary: "Supervised learning uses labeled training datasets to learn mapping functions y = f(x). Unsupervised learning uncovers inherent structure or distributions in unlabeled data X.",
-                    detailedPoints: [
-                      "Supervised: Classification (discrete targets) & Regression (continuous targets).",
-                      "Unsupervised: Clustering (K-Means, DBSCAN) & Dimensionality Reduction (PCA)."
-                    ],
-                    keyFormulaOrCode: "Supervised Loss: L(θ) = 1/N ∑ (y_i - f(x_i; θ))^2",
-                    audioDuration: "01:30"
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      }
-    ];
-    setCoursesData(demoData);
-  };
 
   const currentCourse = coursesData[selectedCourseIndex] || null;
 
@@ -177,9 +185,34 @@ export default function TopicWiseQAPage() {
     setExpandedQuestionId(prev => prev === id ? null : id);
   };
 
-  const toggleAudio = (id: string, e: React.MouseEvent) => {
+  const toggleAudio = (q: TopicQA, e: React.MouseEvent) => {
     e.stopPropagation();
-    setPlayingAudioId(prev => prev === id ? null : id);
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      alert("Text-to-speech voice playback is not supported in this browser.");
+      return;
+    }
+
+    if (playingAudioId === q.id) {
+      window.speechSynthesis.cancel();
+      setPlayingAudioId(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const speechText = `Question: ${q.question}. Summary: ${q.answerSummary}. ${q.detailedPoints?.join('. ') || ''}`
+      .replace(/[*_#`~>]/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+
+    const utterance = new SpeechSynthesisUtterance(speechText);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    utterance.onstart = () => setPlayingAudioId(q.id);
+    utterance.onend = () => setPlayingAudioId(null);
+    utterance.onerror = () => setPlayingAudioId(null);
+
+    window.speechSynthesis.speak(utterance);
   };
 
   // Filter units & topics
@@ -321,14 +354,6 @@ export default function TopicWiseQAPage() {
                 >
                   <Sparkles size={14} /> Ask AI Doubt
                 </Link>
-                {!currentCourse && (
-                  <button
-                    onClick={handleSeedDemoData}
-                    className="px-4 py-2.5 rounded-xl bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-xs font-semibold"
-                  >
-                    Load Sample Syllabus Q&amp;A
-                  </button>
-                )}
               </div>
             </div>
           ) : (
@@ -387,9 +412,13 @@ export default function TopicWiseQAPage() {
 
                                     <div className="flex items-center gap-2">
                                       <button
-                                        onClick={(e) => toggleAudio(q.id, e)}
-                                        className="p-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                                        title="Listen to Voice Explanation"
+                                        onClick={(e) => toggleAudio(q, e)}
+                                        className={`p-2 rounded-xl border transition-all ${
+                                          isPlaying
+                                            ? 'bg-amber-500 text-black border-amber-600 shadow-md animate-pulse'
+                                            : 'border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--text-muted)] hover:text-amber-500'
+                                        }`}
+                                        title="Listen to Voice Explanation (Speech Output)"
                                       >
                                         {isPlaying ? <Pause size={14} /> : <Play size={14} />}
                                       </button>

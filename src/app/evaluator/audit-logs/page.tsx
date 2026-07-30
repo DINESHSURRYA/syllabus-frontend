@@ -1,304 +1,197 @@
 "use client";
 import './styles/page.css';
-import React, { useState } from 'react';
-import {
-  FileCode2,
-  Search,
-  Cpu,
-  Clock,
-  Eye,
-  Copy,
-  Check,
-  Sparkles,
-  Terminal,
-  Code2,
-  AlertCircle,
-  Database,
-  Filter,
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useEvaluatorStore, AuditLogEntry } from '@/stores';
-import {
-  EvaluatorPageHeader,
-  EvaluatorEmptyState,
-  EvaluatorAccordionRow,
-  EvaluatorMetricPill,
-} from '@/components/ui/evaluator';
+import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, ChevronDown, ChevronUp, Database } from 'lucide-react';
+import { fetchAdminLogs, AdminLogEntry } from '@/lib/evaluator-api';
 
-// ============================================================
-// Agent type color config
-// ============================================================
-const agentTypeConfig: Record<string, string> = {
-  IngestorAgent:  'border-indigo-500/30 bg-indigo-500/10 text-indigo-300',
-  QuestionAgent:  'border-cyan-500/30 bg-cyan-500/10 text-cyan-300',
-  EvaluatorAgent: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
-  ReportAgent:    'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
-};
-
-const levelBadgeColors: Record<string, string> = {
-  INFO:  'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
-  WARN:  'bg-amber-500/10 text-amber-400 border-amber-500/30',
-  ERROR: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
-  DEBUG: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
-};
-
-// ============================================================
-// Log Row Card — single accordion row
-// ============================================================
-function AuditLogRow({
-  log,
-  isOpen,
-  onToggle,
-  onCopy,
-  copiedLabel,
-}: {
-  log: AuditLogEntry;
-  isOpen: boolean;
-  onToggle: () => void;
-  onCopy: (text: string, label: string) => void;
-  copiedLabel: string | null;
-}) {
-  const agentClass = agentTypeConfig[log.agentType] || 'border-slate-500/30 bg-slate-500/10 text-slate-300';
-
-  return (
-    <EvaluatorAccordionRow
-      isOpen={isOpen}
-      onToggle={onToggle}
-      headerContent={
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          {/* Agent badge + event name */}
-          <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
-            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold shrink-0 ${agentClass}`}>
-              <Cpu size={10} />
-              {log.agentType}
-            </span>
-            <span className={`px-2 py-0.5 rounded border text-[10px] font-mono font-bold shrink-0 ${levelBadgeColors[log.logLevel] || levelBadgeColors.INFO}`}>
-              {log.logLevel}
-            </span>
-            <span className="text-xs font-mono font-bold text-[var(--text-primary)] truncate">
-              {log.eventName}
-            </span>
-          </div>
-
-          {/* Right metadata row */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 shrink-0 text-[11px] font-mono text-[var(--text-muted)]">
-            <span className="flex items-center gap-1">
-              <span className="text-[var(--text-muted)] text-[10px]">Thread:</span>
-              <span className="text-indigo-400 font-bold">{log.threadId}</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <Clock size={11} />
-              {log.latencyMs}ms
-            </span>
-            <span className="hidden sm:flex items-center gap-1">
-              <span className="text-[10px]">{log.totalTokens} tokens</span>
-            </span>
-            <span className="text-[10px] text-[var(--text-muted)]">{log.timestamp}</span>
-          </div>
-        </div>
-      }
-      bodyContent={
-        <div className="space-y-5">
-          {/* Token metrics row */}
-          <div className="flex flex-wrap items-center gap-6 p-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)]">
-            <EvaluatorMetricPill label="Model" value={log.model} colorClass="text-indigo-300 font-bold" />
-            <EvaluatorMetricPill label="Latency" value={`${log.latencyMs}ms`} colorClass="text-cyan-400 font-bold" />
-            <EvaluatorMetricPill label="Prompt Tokens" value={log.promptTokens.toLocaleString()} colorClass="text-amber-400 font-bold" />
-            <EvaluatorMetricPill label="Completion" value={log.completionTokens.toLocaleString()} colorClass="text-emerald-400 font-bold" />
-            <EvaluatorMetricPill label="Total Tokens" value={log.totalTokens.toLocaleString()} colorClass="text-[var(--text-primary)] font-bold" />
-          </div>
-
-          {/* System Prompt */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Terminal size={11} />
-                System Prompt
-              </span>
-              <button
-                onClick={() => onCopy(log.systemPrompt, `sys-${log.id}`)}
-                className="flex items-center gap-1 text-[10px] font-mono text-[var(--text-muted)] hover:text-indigo-300 transition-colors"
-              >
-                {copiedLabel === `sys-${log.id}` ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
-                {copiedLabel === `sys-${log.id}` ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
-            <pre className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300 leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
-              {log.systemPrompt}
-            </pre>
-          </div>
-
-          {/* User Prompt */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles size={11} />
-                User Prompt
-              </span>
-              <button
-                onClick={() => onCopy(log.userPrompt, `usr-${log.id}`)}
-                className="flex items-center gap-1 text-[10px] font-mono text-[var(--text-muted)] hover:text-cyan-300 transition-colors"
-              >
-                {copiedLabel === `usr-${log.id}` ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
-                {copiedLabel === `usr-${log.id}` ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
-            <pre className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300 leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto custom-scrollbar">
-              {log.userPrompt}
-            </pre>
-          </div>
-
-          {/* Raw JSON Response */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Code2 size={11} />
-                Raw LLM JSON Response
-              </span>
-              <button
-                onClick={() => onCopy(log.rawJsonResponse, `raw-${log.id}`)}
-                className="flex items-center gap-1 text-[10px] font-mono text-[var(--text-muted)] hover:text-emerald-300 transition-colors"
-              >
-                {copiedLabel === `raw-${log.id}` ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
-                {copiedLabel === `raw-${log.id}` ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
-            <pre className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-emerald-300 leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto custom-scrollbar">
-              {log.rawJsonResponse}
-            </pre>
-          </div>
-        </div>
-      }
-    />
-  );
+function formatLogDate(ts?: any): string {
+  if (!ts) return '—';
+  try {
+    const num = Number(ts);
+    if (!isNaN(num)) {
+      const ms = num < 10000000000 ? num * 1000 : num;
+      return new Date(ms).toLocaleString();
+    }
+    return new Date(ts).toLocaleString();
+  } catch (e) {
+    return String(ts);
+  }
 }
 
-// ============================================================
-// Main Page Component
-// ============================================================
-const AGENT_TYPES = ['All', 'IngestorAgent', 'QuestionAgent', 'EvaluatorAgent', 'ReportAgent'] as const;
-const LOG_LEVELS = ['All', 'INFO', 'WARN', 'ERROR', 'DEBUG'] as const;
+export default function AuditLogsPage() {
+  const [logs, setLogs] = useState<AdminLogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const router = useRouter();
 
-export default function SystemAuditLogsPage() {
-  const { auditLogs, selectedAuditLog, setSelectedAuditLog } = useEvaluatorStore();
+  useEffect(() => {
+    async function loadLogs() {
+      try {
+        const data = await fetchAdminLogs();
+        setLogs(data.logs || []);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadLogs();
+  }, []);
 
-  const [agentFilter, setAgentFilter] = useState<string>('All');
-  const [logLevelFilter, setLogLevelFilter] = useState<string>('All');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [copiedPrompt, setCopiedPrompt] = useState<string | null>(null);
-  const [openLogId, setOpenLogId] = useState<string | null>(null);
-
-  const filteredLogs = auditLogs.filter((log) => {
-    const matchesAgent = agentFilter === 'All' || log.agentType === agentFilter;
-    const matchesLevel = logLevelFilter === 'All' || log.logLevel === logLevelFilter;
-    const matchesSearch =
-      log.eventName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.threadId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.model.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesAgent && matchesLevel && matchesSearch;
-  });
-
-  const handleCopyText = (text: string, label: string) => {
-    navigator.clipboard?.writeText(text);
-    setCopiedPrompt(label);
-    setTimeout(() => setCopiedPrompt(null), 2000);
+  const toggleExpand = (idx: number) => {
+    setExpandedId(expandedId === idx ? null : idx);
   };
 
+  if (loading) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center h-full min-h-screen gap-4">
+        <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin" />
+        <p className="text-surface font-mono animate-pulse">Loading System Telemetry Logs...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-8 pb-16">
+    <div className="flex-1 w-full max-w-6xl mx-auto p-4 sm:p-6 lg:p-8 pb-20">
+      {/* Back */}
+      <button
+        onClick={() => router.push('/evaluator/admin')}
+        className="flex items-center gap-2 text-surface/70 hover:text-accent transition-colors mb-8 text-sm"
+      >
+        <ArrowLeft className="w-4 h-4" /> Back to Admin Dashboard
+      </button>
 
-      {/* ── Page Header ─────────────────────────────────── */}
-      <EvaluatorPageHeader
-        eyebrowIcon={FileCode2}
-        eyebrowText="System Telemetry"
-        title="LLM Agent Audit Logs"
-        subtitle="Full observability into every AI agent invocation: prompts, completions, latency, belief updates, and token usage."
-        rightContent={
-          <span className="text-xs font-mono px-3 py-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-card)] text-[var(--text-muted)]">
-            <span className="text-[var(--text-primary)] font-bold">{filteredLogs.length}</span> of{' '}
-            <span className="text-[var(--text-primary)] font-bold">{auditLogs.length}</span> entries
+      <div className="mb-8 border-b border-surface/10 pb-6 flex justify-between items-end">
+        <div>
+          <span className="font-mono text-accent text-sm tracking-widest uppercase mb-2 flex items-center gap-2">
+            <Database className="w-4 h-4" /> System Telemetry
           </span>
-        }
-      />
-
-      {/* ── Filters ─────────────────────────────────────── */}
-      <div className="flex flex-col gap-3">
-        {/* Search */}
-        <div className="relative">
-          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search event name, thread ID, or model..."
-            className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-indigo-500 transition-colors"
-          />
+          <h1 className="font-serif text-3xl sm:text-4xl text-surface">
+            LLM Usage Logs
+          </h1>
         </div>
-
-        {/* Agent type filter */}
-        <div className="flex flex-wrap gap-1.5">
-          <span className="flex items-center gap-1 text-[10px] font-mono text-[var(--text-muted)] mr-1">
-            <Cpu size={11} /> Agent:
-          </span>
-          {AGENT_TYPES.map((a) => (
-            <button
-              key={a}
-              onClick={() => setAgentFilter(a)}
-              className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border transition-all ${
-                agentFilter === a
-                  ? 'bg-indigo-500 border-indigo-500 text-white shadow-sm'
-                  : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-indigo-500/40 hover:text-indigo-300'
-              }`}
-            >
-              {a === 'All' ? 'All Agents' : a.replace('Agent', '')}
-            </button>
-          ))}
-        </div>
-
-        {/* Log level filter */}
-        <div className="flex flex-wrap gap-1.5">
-          <span className="flex items-center gap-1 text-[10px] font-mono text-[var(--text-muted)] mr-1">
-            <Filter size={11} /> Level:
-          </span>
-          {LOG_LEVELS.map((l) => (
-            <button
-              key={l}
-              onClick={() => setLogLevelFilter(l)}
-              className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border transition-all ${
-                logLevelFilter === l
-                  ? 'bg-indigo-500 border-indigo-500 text-white shadow-sm'
-                  : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-indigo-500/40 hover:text-indigo-300'
-              }`}
-            >
-              {l}
-            </button>
-          ))}
+        <div className="text-right hidden sm:block">
+          <p className="text-xs text-surface/50 uppercase tracking-widest mb-1">Total Requests</p>
+          <p className="font-mono text-xl text-accent">{logs.length}</p>
         </div>
       </div>
 
-      {/* ── Log Entries ─────────────────────────────────── */}
-      {filteredLogs.length === 0 ? (
-        <EvaluatorEmptyState
-          icon={Database}
-          title="No log entries found"
-          description={
-            searchQuery || agentFilter !== 'All' || logLevelFilter !== 'All'
-              ? 'No logs match your current filters. Try adjusting your search or filter criteria.'
-              : 'No audit log entries have been recorded yet. Begin an interview session to generate agent telemetry.'
-          }
-        />
+      {logs.length === 0 ? (
+        <div className="bg-surface/5 border border-surface/10 rounded-2xl p-12 text-center">
+          <p className="text-surface/70 italic mb-4">No LLM logs found yet in MongoDB 'sashanth.llm_logs'.</p>
+          <button
+            onClick={() => router.push('/evaluator')}
+            className="px-6 py-2.5 rounded-xl bg-accent text-white font-medium hover:bg-accent/90 transition-all text-sm shadow-md"
+          >
+            Start Diagnostic Assessment
+          </button>
+        </div>
       ) : (
-        <div className="space-y-3">
-          {filteredLogs.map((log) => (
-            <AuditLogRow
-              key={log.id}
-              log={log}
-              isOpen={openLogId === log.id}
-              onToggle={() => setOpenLogId(openLogId === log.id ? null : log.id)}
-              onCopy={handleCopyText}
-              copiedLabel={copiedPrompt}
-            />
-          ))}
+        <div className="space-y-4">
+          {logs.map((log, idx) => {
+            const rawLog = log as any;
+            const agentName = rawLog.agent || 'OpenAIClient';
+            const modelName = rawLog.model || 'gpt-4o-mini';
+            const threadId = rawLog.thread_id || 'N/A';
+            const usage = rawLog.usage || {};
+            const messages = rawLog.messages || [];
+
+            return (
+              <div
+                key={idx}
+                className="bg-surface/5 border border-surface/10 rounded-xl overflow-hidden transition-all hover:border-accent/30"
+              >
+                {/* Header row (clickable) */}
+                <div
+                  className="p-4 sm:p-6 flex flex-col md:flex-row gap-4 md:items-center justify-between cursor-pointer hover:bg-surface/10"
+                  onClick={() => toggleExpand(idx)}
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="px-2.5 py-1 bg-accent/10 text-accent border border-accent/20 rounded text-xs font-bold uppercase tracking-wider">
+                        {agentName}
+                      </span>
+                      <span className="text-xs font-mono text-surface/50">
+                        {formatLogDate(log.timestamp)}
+                      </span>
+                    </div>
+                    <p className="text-sm text-surface/80 font-mono truncate max-w-md">Thread: {threadId}</p>
+                  </div>
+
+                  <div className="flex items-center gap-6 justify-between md:justify-end w-full md:w-auto">
+                    <div className="text-left md:text-right">
+                      <p className="text-xs text-surface/50 uppercase tracking-wider mb-1">Model</p>
+                      <p className="text-sm text-surface truncate w-32 font-mono">{modelName}</p>
+                    </div>
+
+                    <div className="flex gap-4 text-right bg-background p-2.5 rounded-lg border border-surface/10">
+                      <div>
+                        <p className="text-[10px] text-surface/50 uppercase tracking-wider mb-1">Input</p>
+                        <p className="text-sm font-mono text-surface/80">{usage.prompt_tokens || 0}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-surface/50 uppercase tracking-wider mb-1">Output</p>
+                        <p className="text-sm font-mono text-surface/80">{usage.completion_tokens || 0}</p>
+                      </div>
+                      <div className="border-l border-surface/20 pl-4">
+                        <p className="text-[10px] text-surface/50 uppercase tracking-wider mb-1">Total</p>
+                        <p className="text-sm font-mono font-bold text-success">{usage.total_tokens || 0}</p>
+                      </div>
+                    </div>
+                    <div className="text-surface/50">
+                      {expandedId === idx ? (
+                        <ChevronUp className="w-5 h-5" />
+                      ) : (
+                        <ChevronDown className="w-5 h-5" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Expandable Details */}
+                {expandedId === idx && (
+                  <div className="border-t border-surface/10 bg-background/50 p-4 sm:p-6 space-y-6">
+                    {messages.length > 0 && (
+                      <div>
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-surface/70 mb-3 border-b border-surface/10 pb-2">
+                          Messages Sent to LLM
+                        </h4>
+                        <div className="space-y-4">
+                          {messages.map((msg: any, i: number) => (
+                            <div
+                              key={i}
+                              className={`p-4 rounded-lg text-sm font-mono overflow-x-auto ${
+                                msg.role === 'system'
+                                  ? 'bg-accent/5 border-l-2 border-accent text-surface/90'
+                                  : 'bg-surface/5 border border-surface/10 text-surface/80'
+                              }`}
+                            >
+                              <span className="font-bold uppercase tracking-widest text-xs opacity-50 block mb-2">
+                                {msg.role}
+                              </span>
+                              <pre className="whitespace-pre-wrap">{msg.content}</pre>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {rawLog.response && (
+                      <div>
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-success mb-3 border-b border-surface/10 pb-2">
+                          Raw LLM Response
+                        </h4>
+                        <div className="bg-surface/5 border-l-2 border-success p-4 rounded-lg text-sm font-mono overflow-x-auto text-surface/90">
+                          <pre className="whitespace-pre-wrap">{rawLog.response}</pre>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
