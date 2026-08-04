@@ -93,3 +93,74 @@ export interface ExtractionProgressState {
   statusText: string;
   error?: string | null;
 }
+
+// ----------------------------------------------------------------------------
+// Dynamic Syllabus Extraction & Interactive Cards Specifications
+// ----------------------------------------------------------------------------
+
+export interface CourseInfo {
+  code: string;
+  title: string;
+  department: string;
+  semester: string;
+  credits: number;
+  lecture_hours: number;
+  tutorial_hours: number;
+  practical_hours: number;
+}
+
+export interface Topic {
+  title: string;
+  difficulty?: 'Beginner' | 'Intermediate' | 'Advanced';
+  bloom_level?: 'Remember' | 'Understand' | 'Apply' | 'Analyze' | 'Evaluate' | 'Create';
+  dependency?: string;
+  prerequisite?: string;
+  subtopics: string[];
+}
+
+export interface Unit {
+  unit_number: number;
+  title: string;
+  hours: number;
+  topics: Topic[];
+}
+
+export interface DynamicCourseOutcome {
+  code: string;
+  description: string;
+  bloom_level?: string;
+}
+
+export interface COPOMappingItem {
+  co_code: string;
+  po_code: string;
+  correlation_value: number; // 0, 1, 2, 3
+}
+
+export interface Book {
+  title: string;
+  authors?: string;
+  publisher?: string;
+  year?: string;
+  book_type?: 'textbook' | 'reference';
+}
+
+export interface SyllabusExtractionPayload {
+  course_info: CourseInfo;
+  units: Unit[];
+  course_outcomes: DynamicCourseOutcome[];
+  co_po_pso_matrix: COPOMappingItem[];
+  textbooks: Book[];
+  reference_books: Book[];
+  assessment_pattern?: Record<string, any>;
+}
+
+export interface ExtractionJobResponse {
+  id: string;
+  filename: string;
+  status: 'UPLOADING' | 'READING_PDF' | 'GPT_PROCESSING' | 'BUILDING_JSON' | 'VALIDATION' | 'COMPLETED' | 'FAILED';
+  progress: number;
+  logs: string[];
+  extracted_json?: SyllabusExtractionPayload;
+  error_message?: string;
+}

@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Style Interactive Loader Modal</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                        mono: ['"Fira Code"', 'monospace'],
+                    },
+                    colors: {
+                        navy: {
+                            800: '#0f172a',
+                            900: '#0a0f1d',
+                            950: '#050811',
+                        }
+                    },
+                    animation: {
+                        'spin-slow': 'spin 3s linear infinite',
+                        'spin-reverse': 'spin-reverse 2s linear infinite',
+                        'pulse-glow': 'pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        'spin-reverse': {
+                            '0%': { transform: 'rotate(0deg)' },
+                            '100%': { transform: 'rotate(-360deg)' },
+                        },
+                        'pulse-glow': {
+                            '0%, 100%': { opacity: 1, filter: 'drop-shadow(0 0 15px rgba(99,102,241,0.6))' },
+                            '50%': { opacity: 0.7, filter: 'drop-shadow(0 0 5px rgba(99,102,241,0.2))' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Alpine.js CDN -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* Glassmorphism Effect */
+        .glass-modal {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* Style 1: Skeleton Shimmer Wave */
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        .shimmer-wave::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            transform: translateX(-100%);
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+            animation: shimmer 1.5s infinite;
+        }
+
+        /* Style 3: Equalizer Bouncing Bars */
+        @keyframes equalizer {
+            0%, 100% { height: 8px; }
+            50% { height: 40px; }
+        }
+        .eq-bar {
+            animation: equalizer 1s ease-in-out infinite;
+        }
+
+        /* Style 5: Glowing Conic Border Rotation */
+        @keyframes rotate-conic {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .conic-rotate {
+            animation: rotate-conic 3s linear infinite;
+        }
+    </style>
+</head>
+<body class="bg-navy-950 text-slate-100 font-sans antialiased min-h-screen flex items-center justify-center p-4 selection:bg-indigo-500 selection:text-white"
+      x-data="multiLoaderApp()">
+
+    <!-- Ambient Glowing Background Spheres -->
+    <div class="fixed top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-600/15 blur-[160px] rounded-full pointer-events-none"></div>
+    <div class="fixed bottom-1/4 right-1/4 w-[400px] h-[400px] bg-emerald-500/10 blur-[140px] rounded-full pointer-events-none"></div>
+
+    <!-- MAIN DASHBOARD CARD & TRIGGER BUTTON -->
+    <div class="relative z-10 w-full max-w-xl text-center space-y-6 bg-navy-900/60 p-8 sm:p-10 rounded-3xl border border-slate-800 backdrop-blur-xl shadow-2xl">
+        <div class="inline-flex items-center justify-center p-3.5 bg-indigo-600/20 text-indigo-400 rounded-2xl border border-indigo-500/30 mb-2">
+            <i data-lucide="cpu" class="w-8 h-8"></i>
+        </div>
+        <h1 class="text-3xl font-extrabold tracking-tight text-white">
+            P N R Backend Data Processor
+        </h1>
+        <p class="text-slate-400 text-sm leading-relaxed max-w-md mx-auto">
+            Simulate a long-running heavy backend task to experience the continuous 6-style dynamic loader cycling.
+        </p>
+
+        <!-- Trigger Button -->
+        <button @click="startProcess()" 
+                class="w-full py-4 px-8 bg-gradient-to-r from-indigo-600 via-indigo-500 to-emerald-500 hover:from-indigo-500 hover:to-emerald-400 text-white font-extrabold text-sm rounded-2xl shadow-xl shadow-indigo-600/25 hover:shadow-indigo-600/40 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3 group">
+            <i data-lucide="play-circle" class="w-5 h-5 group-hover:scale-110 transition-transform"></i>
+            <span>RUN BACKEND TASK (12s PROCESS)</span>
+        </button>
+
+        <div class="flex items-center justify-center gap-6 text-xs text-slate-500 pt-2 border-t border-slate-800/80">
+            <span class="flex items-center gap-1.5"><i data-lucide="layers" class="w-4 h-4 text-indigo-400"></i> 6 Unique Styles</span>
+            <span class="flex items-center gap-1.5"><i data-lucide="clock" class="w-4 h-4 text-emerald-400"></i> Auto-Switching 2s</span>
+            <span class="flex items-center gap-1.5"><i data-lucide="shield-check" class="w-4 h-4 text-indigo-400"></i> Dynamic State</span>
+        </div>
+    </div>
+
+
+    <!-- ========================================== -->
+    <!-- CENTERED MULTI-STYLE LOADER MODAL OVERLAY  -->
+    <!-- ========================================== -->
+    <div x-show="isOpen" 
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100 scale-100"
+         x-transition:leave-end="opacity-0 scale-95"
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/80 backdrop-blur-md"
+         style="display: none;">
+        
+        <div class="glass-modal rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative overflow-hidden border border-slate-700/60 flex flex-col items-center text-center">
+            
+            <!-- Overall Progress Bar Header -->
+            <div class="w-full mb-6 space-y-2">
+                <div class="flex justify-between items-center text-xs font-bold uppercase tracking-wider">
+                    <span class="text-indigo-400 flex items-center gap-1.5">
+                        <i data-lucide="loader" class="w-3.5 h-3.5 animate-spin" x-show="!isComplete"></i>
+                        <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-400" x-show="isComplete"></i>
+                        <span x-text="isComplete ? 'Process Complete!' : 'Phase ' + currentStyle + ' of 6: ' + styleTitles[currentStyle-1]"></span>
+                    </span>
+                    <span class="text-slate-400 font-mono" x-text="Math.round(progress) + '%'"></span>
+                </div>
+                
+                <!-- Animated Progress Bar -->
+                <div class="w-full bg-slate-800/80 h-2 rounded-full overflow-hidden border border-slate-700/50">
+                    <div class="bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-400 h-full transition-all duration-300 ease-out" 
+                         :style="'width: ' + progress + '%'"></div>
+                </div>
+            </div>
+
+            <!-- ACTIVE STYLE DISPLAY CONTAINER (WITH CROSS-FADE TRANSITION) -->
+            <div class="w-full min-h-[260px] flex items-center justify-center relative my-2">
+                
+                <!-- ========================================== -->
+                <!-- STYLE 1: CLASSIC SKELETON SHIMMER          -->
+                <!-- ========================================== -->
+                <div x-show="currentStyle === 1 && !isComplete" 
+                     x-transition:enter="transition ease-out duration-300 transform"
+                     x-transition:enter-start="opacity-0 scale-95"
+                     x-transition:enter-end="opacity-100 scale-100"
+                     x-transition:leave="transition ease-in duration-200 transform"
+                     x-transition:leave-start="opacity-100 scale-100"
+                     x-transition:leave-end="opacity-0 scale-95"
+                     class="w-full space-y-4 p-4 rounded-2xl bg-navy-900/60 border border-slate-800/80">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-xl bg-slate-800 relative overflow-hidden shimmer-wave"></div>
+                        <div class="space-y-2 flex-1">
+                            <div class="h-4 bg-slate-800 rounded-md w-3/4 relative overflow-hidden shimmer-wave"></div>
+                            <div class="h-3 bg-slate-800/60 rounded-md w-1/2 relative overflow-hidden shimmer-wave"></div>
+                        </div>
+                    </div>
+                    <div class="space-y-2 pt-2">
+                        <div class="h-3 bg-slate-800/80 rounded-md w-full relative overflow-hidden shimmer-wave"></div>
+                        <div class="h-3 bg-slate-800/80 rounded-md w-5/6 relative overflow-hidden shimmer-wave"></div>
+                        <div class="h-3 bg-slate-800/50 rounded-md w-2/3 relative overflow-hidden shimmer-wave"></div>
+                    </div>
+                </div>
+
+                <!-- ========================================== -->
+                <!-- STYLE 2: CYBERPUNK NEON PULSE             -->
+                <!-- ========================================== -->
+                <div x-show="currentStyle === 2 && !isComplete" 
+                     x-transition:enter="transition ease-out duration-300 transform"
+                     x-transition:enter-start="opacity-0 scale-95"
+                     x-transition:enter-end="opacity-100 scale-100"
+                     x-transition:leave="transition ease-in duration-200 transform"
+                     x-transition:leave-start="opacity-100 scale-100"
+                     x-transition:leave-end="opacity-0 scale-95"
+                     class="flex flex-col items-center justify-center space-y-4">
+                    <div class="relative flex items-center justify-center">
+                        <!-- Outer Pulse Ring -->
+                        <div class="w-24 h-24 rounded-2xl border-2 border-indigo-500/80 bg-indigo-500/10 animate-pulse-glow flex items-center justify-center">
+                            <i data-lucide="zap" class="w-10 h-10 text-indigo-400 animate-bounce"></i>
+                        </div>
+                        <div class="absolute -top-1 -right-1 flex h-4 w-4">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-4 w-4 bg-emerald-500"></span>
+                        </div>
+                    </div>
+                    <div class="text-xs font-mono tracking-widest text-indigo-300 uppercase animate-pulse">
+                        [ NEON LINK ACTIVE • COMPILING MODULES ]
+                    </div>
+                </div>
+
+                <!-- ========================================== -->
+                <!-- STYLE 3: AUDIO / DATA EQUALIZER WAVE      -->
+                <!-- ========================================== -->
+                <div x-show="currentStyle === 3 && !isComplete" 
+                     x-transition:enter="transition ease-out duration-300 transform"
+                     x-transition:enter-start="opacity-0 scale-95"
+                     x-transition:enter-end="opacity-100 scale-100"
+                     x-transition:leave="transition ease-in duration-200 transform"
+                     x-transition:leave-start="opacity-100 scale-100"
+                     x-transition:leave-end="opacity-0 scale-95"
+                     class="flex flex-col items-center justify-center space-y-6">
+                    <div class="flex items-end justify-center gap-2 h-16 px-6 py-2 bg-slate-900/80 rounded-2xl border border-slate-800">
+                        <div class="w-2 bg-emerald-400 rounded-full eq-bar" style="animation-delay: 0.1s"></div>
+                        <div class="w-2 bg-indigo-500 rounded-full eq-bar" style="animation-delay: 0.3s"></div>
+                        <div class="w-2 bg-purple-500 rounded-full eq-bar" style="animation-delay: 0.2s"></div>
+                        <div class="w-2 bg-indigo-400 rounded-full eq-bar" style="animation-delay: 0.4s"></div>
+                        <div class="w-2 bg-emerald-500 rounded-full eq-bar" style="animation-delay: 0.15s"></div>
+                        <div class="w-2 bg-purple-400 rounded-full eq-bar" style="animation-delay: 0.35s"></div>
+                    </div>
+                    <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        Synchronizing Signal Streams...
+                    </span>
+                </div>
+
+                <!-- ========================================== -->
+                <!-- STYLE 4: GEOMETRIC DUAL SPINNER            -->
+                <!-- ========================================== -->
+                <div x-show="currentStyle === 4 && !isComplete" 
+                     x-transition:enter="transition ease-out duration-300 transform"
+                     x-transition:enter-start="opacity-0 scale-95"
+                     x-transition:enter-end="opacity-100 scale-100"
+                     x-transition:leave="transition ease-in duration-200 transform"
+                     x-transition:leave-start="opacity-100 scale-100"
+                     x-transition:leave-end="opacity-0 scale-95"
+                     class="flex flex-col items-center justify-center space-y-4">
+                    <div class="relative w-20 h-20 flex items-center justify-center">
+                        <!-- Outer Ring -->
+                        <div class="absolute inset-0 rounded-full border-4 border-t-indigo-500 border-r-transparent border-b-indigo-500/30 border-l-transparent animate-spin-slow"></div>
+                        <!-- Inner Reverse Ring -->
+                        <div class="absolute inset-2 rounded-full border-4 border-t-transparent border-r-emerald-400 border-b-transparent border-l-emerald-400/30 animate-spin-reverse"></div>
+                        <i data-lucide="database" class="w-6 h-6 text-slate-300"></i>
+                    </div>
+                    <span class="text-xs font-mono text-emerald-400">GEOMETRIC_INDEXING()</span>
+                </div>
+
+                <!-- ========================================== -->
+                <!-- STYLE 5: GLOWING CONIC TECH BORDER        -->
+                <!-- ========================================== -->
+                <div x-show="currentStyle === 5 && !isComplete" 
+                     x-transition:enter="transition ease-out duration-300 transform"
+                     x-transition:enter-start="opacity-0 scale-95"
+                     x-transition:enter-end="opacity-100 scale-100"
+                     x-transition:leave="transition ease-in duration-200 transform"
+                     x-transition:leave-start="opacity-100 scale-100"
+                     x-transition:leave-end="opacity-0 scale-95"
+                     class="flex flex-col items-center justify-center">
+                    <div class="relative p-[3px] rounded-3xl overflow-hidden">
+                        <!-- Rotating Conic Gradient Layer -->
+                        <div class="absolute inset-0 conic-rotate bg-[conic-gradient(from_0deg,#6366f1,#10b981,#3b82f6,#6366f1)]"></div>
+                        <!-- Inner Card -->
+                        <div class="relative bg-navy-950 px-8 py-6 rounded-[21px] flex flex-col items-center gap-2">
+                            <i data-lucide="shield-alert" class="w-8 h-8 text-indigo-400"></i>
+                            <span class="text-sm font-bold text-white">Encrypting Payload</span>
+                            <span class="text-xs text-slate-400">256-Bit SSL Pipeline</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ========================================== -->
+                <!-- STYLE 6: RETRO TERMINAL CONSOLE           -->
+                <!-- ========================================== -->
+                <div x-show="currentStyle === 6 && !isComplete" 
+                     x-transition:enter="transition ease-out duration-300 transform"
+                     x-transition:enter-start="opacity-0 scale-95"
+                     x-transition:enter-end="opacity-100 scale-100"
+                     x-transition:leave="transition ease-in duration-200 transform"
+                     x-transition:leave-start="opacity-100 scale-100"
+                     x-transition:leave-end="opacity-0 scale-95"
+                     class="w-full bg-slate-950 rounded-2xl p-4 border border-slate-800 text-left font-mono text-xs space-y-1.5 shadow-inner">
+                    <div class="flex items-center gap-1.5 pb-2 border-b border-slate-800 text-slate-500 text-[10px]">
+                        <span class="w-2.5 h-2.5 rounded-full bg-red-500/80"></span>
+                        <span class="w-2.5 h-2.5 rounded-full bg-amber-500/80"></span>
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500/80"></span>
+                        <span class="ml-2">bash - pnr-daemon-v2</span>
+                    </div>
+                    <div class="text-emerald-400">$ pnr-cli init --force</div>
+                    <div class="text-slate-400">&gt; Fetching payload... <span class="text-emerald-400">OK</span></div>
+                    <div class="text-slate-400">&gt; Verifying checksum... <span class="text-emerald-400">OK</span></div>
+                    <div class="text-indigo-400 flex items-center gap-1">
+                        <span>&gt; Finalizing database sync</span>
+                        <span class="animate-ping font-bold">_</span>
+                    </div>
+                </div>
+
+                <!-- ========================================== -->
+                <!-- SUCCESS / COMPLETION STATE                 -->
+                <!-- ========================================== -->
+                <div x-show="isComplete" 
+                     x-transition:enter="transition ease-out duration-400 transform"
+                     x-transition:enter-start="opacity-0 scale-90"
+                     x-transition:enter-end="opacity-100 scale-100"
+                     class="flex flex-col items-center justify-center space-y-4 py-4">
+                    <div class="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                        <i data-lucide="check" class="w-8 h-8 stroke-[3]"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-extrabold text-white">Process Completed Successfully!</h3>
+                        <p class="text-xs text-slate-400 mt-1">All 6 backend verification stages executed cleanly.</p>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Modal Footer Controls -->
+            <div class="w-full pt-4 border-t border-slate-800 flex justify-between items-center text-xs text-slate-400">
+                <span x-text="isComplete ? 'Execution Status: 200 Success' : 'Status: Processing requests...'"></span>
+                
+                <button @click="closeModal()" 
+                        :disabled="!isComplete"
+                        :class="isComplete ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg cursor-pointer' : 'bg-slate-800 text-slate-500 cursor-not-allowed opacity-50'"
+                        class="px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2">
+                    <span x-text="isComplete ? 'View Results' : 'Processing...'"></span>
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+
+    <!-- ========================================== -->
+    <!-- ALPINE APP LOGIC                           -->
+    <!-- ========================================== -->
+    <script>
+        function multiLoaderApp() {
+            return {
+                isOpen: false,
+                isComplete: false,
+                currentStyle: 1,
+                progress: 0,
+                timer: null,
+                styleTitles: [
+                    'Skeleton Shimmer',
+                    'Cyberpunk Neon Pulse',
+                    'Data Equalizer Wave',
+                    'Geometric Dual Spinner',
+                    'Glowing Conic Border',
+                    'Terminal CLI Console'
+                ],
+
+                startProcess() {
+                    this.isOpen = true;
+                    this.isComplete = false;
+                    this.currentStyle = 1;
+                    this.progress = 0;
+
+                    const totalDuration = 12000; // 12 Seconds Total Process
+                    const intervalTime = 100;
+                    const totalSteps = totalDuration / intervalTime;
+                    let currentStep = 0;
+
+                    if (this.timer) clearInterval(this.timer);
+
+                    this.timer = setInterval(() => {
+                        currentStep++;
+                        this.progress = Math.min(100, (currentStep / totalSteps) * 100);
+
+                        // Calculate current style (Cycle 1 to 6 every 2 seconds)
+                        const computedStyle = Math.min(6, Math.floor((this.progress / 100) * 6) + 1);
+                        if (computedStyle !== this.currentStyle && computedStyle <= 6) {
+                            this.currentStyle = computedStyle;
+                        }
+
+                        // Completion trigger
+                        if (currentStep >= totalSteps) {
+                            clearInterval(this.timer);
+                            this.isComplete = true;
+                            this.$nextTick(() => lucide.createIcons());
+                        }
+                    }, intervalTime);
+
+                    this.$nextTick(() => lucide.createIcons());
+                },
+
+                closeModal() {
+                    if (this.isComplete) {
+                        this.isOpen = false;
+                    }
+                }
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+        });
+    </script>
+</body>
+</html>

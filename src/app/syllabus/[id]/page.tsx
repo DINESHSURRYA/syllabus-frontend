@@ -202,7 +202,12 @@ export default function SyllabusDetailPage() {
   const credits = syllabusData.credits || content.metadata?.credits || 4;
   const versionNum = syllabusData.versionNumber || content.versionNumber || 1;
 
-  const units = content.units || syllabusData.units || [];
+  const rawUnits = (content.units && content.units.length > 0)
+    ? content.units
+    : (syllabusData?.units && syllabusData.units.length > 0)
+      ? syllabusData.units
+      : (content.hierarchicalTreeData?.units || syllabusData?.hierarchicalTreeData?.units || (Array.isArray(content.hierarchicalTreeData) ? content.hierarchicalTreeData : []));
+  const units = Array.isArray(rawUnits) ? rawUnits : [];
   const objectives = content.objectives || syllabusData.objectives || [];
   const outcomes = content.outcomes || syllabusData.outcomes || [];
   const textbooks = content.textbooks || syllabusData.textbooks || [];
@@ -475,23 +480,31 @@ export default function SyllabusDetailPage() {
                         {isExpanded && (
                           <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-3 bg-white/60 dark:bg-slate-900/40">
                             {unit.topics?.map((t: any, tIdx: number) => {
-                              const tTitle = typeof t === 'string' ? t : t.title || 'Topic';
-                              const subtopics = typeof t === 'object' ? t.subtopics || [] : [];
+                              const tTitle = typeof t === 'string' ? t : t.title || t.name || t.topicTitle || 'Topic';
+                              const bloomLevel = typeof t === 'object' ? (t.bloomLevel || t.bloom_level || t.bloom) : null;
+                              const subtopics = typeof t === 'object' ? (t.subtopics || []) : [];
 
                               return (
-                                <div key={tIdx} className="rounded-xl border border-slate-200 dark:border-slate-800/70 bg-slate-50/60 dark:bg-slate-950/40 p-3 space-y-1.5">
-                                  <div className="flex items-center justify-between text-xs">
-                                    <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                                      <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                                <div key={tIdx} className="rounded-xl border border-slate-200 dark:border-slate-800/80 bg-slate-50/80 dark:bg-slate-950/60 p-3.5 space-y-2 shadow-xs">
+                                  {/* Topic Header */}
+                                  <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
+                                    <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2 text-sm">
+                                      <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0" />
                                       {tTitle}
                                     </span>
+                                    {bloomLevel && (
+                                      <span className="px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-700 dark:text-purple-300 font-mono text-[10px] font-bold border border-purple-500/20">
+                                        {bloomLevel}
+                                      </span>
+                                    )}
                                   </div>
 
+                                  {/* Subtopics */}
                                   {subtopics.length > 0 && (
-                                    <div className="pl-4 pt-1 space-y-1 border-l border-slate-200 dark:border-slate-800">
+                                    <div className="pl-4 space-y-1 border-l-2 border-slate-200 dark:border-slate-800">
                                       {subtopics.map((st: any, stIdx: number) => (
                                         <p key={stIdx} className="text-xs text-slate-600 dark:text-slate-400 font-mono">
-                                          • {typeof st === 'string' ? st : st.title}
+                                          • {typeof st === 'string' ? st : st.title || st.name}
                                         </p>
                                       ))}
                                     </div>

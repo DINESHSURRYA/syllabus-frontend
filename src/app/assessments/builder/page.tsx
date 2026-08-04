@@ -101,8 +101,8 @@ function SortableQuestionCard({
             {question.questionText}
           </p>
 
-          <p className="text-[10px] text-slate-500 truncate" title={question.unitTopic || 'General Topic'}>
-            {question.unitTopic || 'General Topic'}
+          <p className="text-[10px] text-slate-500 truncate" title={question.topic || question.unitTopic || 'Core Principles & System Architecture'}>
+            {question.topic || question.unitTopic || 'Core Principles & System Architecture'}
           </p>
         </div>
       </div>

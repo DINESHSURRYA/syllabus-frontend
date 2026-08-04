@@ -36,4 +36,9 @@ export {
   getSyllabusTimeline,
   uploadAndExtractSyllabusBackend,
   generateCoPoMapping,
+  uploadSyllabusPdf,
+  getJobStatus,
+  saveVerifiedCourse,
+  updateCopoMapping,
 } from './api';
+

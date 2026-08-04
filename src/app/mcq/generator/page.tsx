@@ -34,7 +34,8 @@ import { AppShell } from '@/components/layout/app-shell';
 import { Button } from '@/components/ui/button';
 import { useSyllabusStore, useMCQStore, BLOOM_LEVEL_DESCRIPTIONS } from '@/stores';
 import { BloomLevel, MCQQuestion, QuestionSet } from '@/types';
-import { getSyllabusList } from '@/lib/api/syllabus.api';
+import { getSyllabusList, getSyllabusById } from '@/lib/api/syllabus.api';
+import { client } from '@/lib/api/client';
 import { generateMcqQuestions, getMcqBank } from '@/lib/api/mcq.api';
 import { toast } from 'sonner';
 
@@ -76,22 +77,115 @@ interface CourseOption {
   }>;
 }
 
+function generateDefaultUnitsForCourse(courseCode: string, courseName: string) {
+  const code = courseCode || 'COURSE';
+  const name = courseName || 'Subject';
+  return [
+    {
+      id: `${code}-u1`,
+      title: `Unit I: Foundations & Principles of ${name}`,
+      unit_number: 1,
+      topics: [
+        {
+          id: `${code}-t1-1`,
+          title: `Core Principles & System Architecture`,
+          subtopics: [
+            { id: `${code}-st1-1-1`, title: 'System Overview & Terminology', bloom: 'K1' },
+            { id: `${code}-st1-1-2`, title: 'Fundamental Invariants & Models', bloom: 'K2' },
+          ],
+        },
+        {
+          id: `${code}-t1-2`,
+          title: `Data Handling & Processing Methods`,
+          subtopics: [
+            { id: `${code}-st1-2-1`, title: 'Structural Flow Analysis', bloom: 'K3' },
+          ],
+        },
+      ],
+    },
+    {
+      id: `${code}-u2`,
+      title: `Unit II: Advanced Concepts & Optimization`,
+      unit_number: 2,
+      topics: [
+        {
+          id: `${code}-t2-1`,
+          title: `Algorithm & System Optimization`,
+          subtopics: [
+            { id: `${code}-st2-1-1`, title: 'Performance Trade-offs & Profiling', bloom: 'K4' },
+          ],
+        },
+        {
+          id: `${code}-t2-2`,
+          title: `Evaluation & Integration Methods`,
+          subtopics: [
+            { id: `${code}-st2-2-1`, title: 'Validation Metrics & Comparative Analysis', bloom: 'K5' },
+          ],
+        },
+      ],
+    },
+    {
+      id: `${code}-u3`,
+      title: `Unit III: Synthesis & Real-World Applications`,
+      unit_number: 3,
+      topics: [
+        {
+          id: `${code}-t3-1`,
+          title: `Solution Engineering & Innovation`,
+          subtopics: [
+            { id: `${code}-st3-1-1`, title: 'Composite System Design Patterns', bloom: 'K6' },
+          ],
+        },
+      ],
+    },
+  ];
+}
+
+const BLOOM_CODE_TO_KNOWLEDGE_LEVEL: Record<BloomLevel, string> = {
+  K1: 'Remember',
+  K2: 'Understand',
+  K3: 'Apply',
+  K4: 'Analyze',
+  K5: 'Evaluate',
+  K6: 'Create',
+};
+
+
 function normalizeCourseOption(course: CourseOption, courseIdx: number = 0): CourseOption {
   const cId = course.id || course.courseCode || `course-${courseIdx}`;
-  const rawUnits = course.content?.units || course.units || [];
+  const cCode = course.courseCode || cId;
+  const cName = course.courseName || cCode;
 
-  const normalizedUnits = rawUnits.map((u, uIdx) => {
-    const unitId = u.id || `${cId}-u-${u.unit_number || uIdx + 1}`;
-    const rawTopics = u.topics || [];
+  let rawUnits =
+    course.units ||
+    course.content?.units ||
+    (course as any).content?.course?.units ||
+    (course as any).content?.hierarchicalTreeData?.units ||
+    (Array.isArray((course as any).content?.hierarchicalTreeData) ? (course as any).content?.hierarchicalTreeData : null) ||
+    (course as any).hierarchicalTreeData?.units ||
+    (Array.isArray((course as any).hierarchicalTreeData) ? (course as any).hierarchicalTreeData : null) ||
+    (course as any).content?.hierarchy ||
+    (course as any).hierarchy ||
+    (course as any).children ||
+    [];
 
-    const normalizedTopics = rawTopics.map((t: any, tIdx: number) => {
-      const topicId = t.id || `${unitId}-t-${tIdx + 1}`;
-      const topicTitle = t.title || t.name || `Topic ${tIdx + 1}`;
-      const rawSubtopics = t.subtopics || [];
+  if (!Array.isArray(rawUnits) || rawUnits.length === 0) {
+    rawUnits = generateDefaultUnitsForCourse(cCode, cName);
+  }
 
-      const normalizedSubtopics = rawSubtopics.map((st: any, stIdx: number) => {
+  const normalizedUnits = rawUnits.map((u: any, uIdx: number) => {
+    const unitId = u.id || u.unitId || `${cId}-u-${u.unit_number || u.unitNumber || uIdx + 1}`;
+    const unitTitle = u.title || u.unitTitle || u.name || `Unit ${u.unit_number || u.unitNumber || uIdx + 1}`;
+    const rawTopics = u.topics || u.children || u.rawTopicNames || [];
+
+    const normalizedTopics = (Array.isArray(rawTopics) ? rawTopics : []).map((t: any, tIdx: number) => {
+      const topicId = (typeof t === 'object' && t.id) ? t.id : `${unitId}-t-${tIdx + 1}`;
+      const topicTitle = typeof t === 'string' ? t : (t.title || t.name || t.topicTitle || `Topic ${tIdx + 1}`);
+      const rawSubtopics = typeof t === 'object' ? (t.subtopics || t.children || []) : [];
+
+      const normalizedSubtopics = (Array.isArray(rawSubtopics) ? rawSubtopics : []).map((st: any, stIdx: number) => {
         const subId = typeof st === 'object' && st.id ? st.id : `${topicId}-st-${stIdx + 1}`;
-        const subTitle = typeof st === 'string' ? st : st.title || st.name || `Subtopic ${stIdx + 1}`;
+        const subTitle = typeof st === 'string' ? st : (st.title || st.name || `Subtopic ${stIdx + 1}`);
         const subBloom = typeof st === 'object' && st.bloom ? st.bloom : 'K2';
 
         return {
@@ -110,8 +204,8 @@ function normalizeCourseOption(course: CourseOption, courseIdx: number = 0): Cou
 
     return {
       id: unitId,
-      title: u.title || `Unit ${u.unit_number || uIdx + 1}`,
-      unit_number: u.unit_number || uIdx + 1,
+      title: unitTitle,
+      unit_number: u.unit_number || u.unitNumber || uIdx + 1,
       topics: normalizedTopics,
     };
   });
@@ -119,6 +213,8 @@ function normalizeCourseOption(course: CourseOption, courseIdx: number = 0): Cou
   return {
     ...course,
     id: cId,
+    courseCode: cCode,
+    courseName: cName,
     units: normalizedUnits,
   };
 }
@@ -259,6 +355,42 @@ export default function MCQGeneratorPage() {
     },
   ], []);
 
+  const fetchAndSetCourseDetails = async (courseId: string) => {
+    if (!courseId) return;
+    try {
+      let detailedSyllabus: any = null;
+      try {
+        detailedSyllabus = await getSyllabusById(courseId);
+      } catch (err) {
+        detailedSyllabus = await client.get(`/api/courses/${encodeURIComponent(courseId)}`).catch(() => null);
+      }
+
+      if (detailedSyllabus) {
+        const rawUnits = detailedSyllabus.units || detailedSyllabus.content?.units || [];
+        if (Array.isArray(rawUnits) && rawUnits.length > 0) {
+          setCoursesList((prev) => {
+            return prev.map((c) => {
+              if ((c.id || c.courseCode) === courseId) {
+                const merged = normalizeCourseOption({
+                  ...c,
+                  units: rawUnits,
+                  content: detailedSyllabus.content || detailedSyllabus,
+                });
+                if (selectedCourseId === courseId || c.id === selectedCourseId) {
+                  initializeCascadingSelections(merged);
+                }
+                return merged;
+              }
+              return c;
+            });
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Error fetching course details:', err);
+    }
+  };
+
   // Fetch Syllabus on Mount
   useEffect(() => {
     async function loadSyllabi() {
@@ -278,6 +410,7 @@ export default function MCQGeneratorPage() {
           const firstId = firstCourse.id || firstCourse.courseCode;
           setSelectedCourseId(firstId);
           initializeCascadingSelections(firstCourse);
+          fetchAndSetCourseDetails(firstId);
         } else if (syllabus?.units && syllabus.units.length > 0) {
           const storeCourse: CourseOption = {
             id: syllabus.course?.code || syllabus.pdfCourseCode || 'CURRENT_SYLLABUS',
@@ -517,33 +650,56 @@ export default function MCQGeneratorPage() {
     }
 
     if (currentUnit) return currentUnit.title;
-    return currentCourse?.courseName || 'General Topic';
+    return currentCourse?.courseName || 'Core Principles & System Architecture';
   }, [customTopic, availableSubtopics, selectedSubtopicIds, topicsList, selectedTopicIds, currentUnit, currentCourse]);
 
   // Total assigned questions counter
   const totalAssigned = Object.values(bloomMatrix).reduce((a, b) => a + b, 0);
 
   // Auto-distribute Bloom's levels evenly across total target question count
-  const handleAutoDistribute = () => {
+  const handleAutoDistribute = (targetCount: number = questionCount) => {
     const levels: BloomLevel[] = ['K1', 'K2', 'K3', 'K4', 'K5', 'K6'];
-    const base = Math.floor(questionCount / 6);
-    const remainder = questionCount % 6;
+    const base = Math.floor(targetCount / 6);
+    const remainder = targetCount % 6;
     const newMatrix: Record<BloomLevel, number> = { K1: base, K2: base, K3: base, K4: base, K5: base, K6: base };
 
     for (let i = 0; i < remainder; i++) {
       newMatrix[levels[i]] += 1;
     }
     setBloomMatrix(newMatrix);
+  };
+
+  const handleManualAutoDistribute = () => {
+    handleAutoDistribute(questionCount);
     toast.success("Bloom's matrix balanced automatically!");
+  };
+
+  const handleQuestionCountChange = (newCount: number) => {
+    const clamped = Math.max(1, Math.min(50, newCount));
+    setQuestionCount(clamped);
+    handleAutoDistribute(clamped);
+  };
+
+  // Lower-order cognitive focus (K1-K3)
+  const handleFocusLowerOrder = () => {
+    const base = Math.floor(questionCount / 3);
+    const remainder = questionCount % 3;
+    const k1 = base + (remainder > 0 ? 1 : 0);
+    const k2 = base + (remainder > 1 ? 1 : 0);
+    const k3 = base;
+    setBloomMatrix({ K1: k1, K2: k2, K3: k3, K4: 0, K5: 0, K6: 0 });
+    toast.info("Configured matrix for Lower Order Thinking Skills (LOTS: K1-K3)");
   };
 
   // Higher-order cognitive focus (K4-K6)
   const handleFocusHigherOrder = () => {
-    const k4 = Math.ceil(questionCount * 0.35);
-    const k5 = Math.ceil(questionCount * 0.35);
-    const k6 = Math.max(1, questionCount - (k4 + k5));
+    const base = Math.floor(questionCount / 3);
+    const remainder = questionCount % 3;
+    const k4 = base + (remainder > 0 ? 1 : 0);
+    const k5 = base + (remainder > 1 ? 1 : 0);
+    const k6 = base;
     setBloomMatrix({ K1: 0, K2: 0, K3: 0, K4: k4, K5: k5, K6: k6 });
-    toast.info("Configured matrix for Higher Order Thinking Skills (HOTS)");
+    toast.info("Configured matrix for Higher Order Thinking Skills (HOTS: K4-K6)");
   };
 
   // Generation workflow
@@ -567,6 +723,19 @@ export default function MCQGeneratorPage() {
       shuffle_options: shuffleOptions,
       knowledge_level: null,
       knowledge_level_breakdown: bloomMatrix,
+      // PostgreSQL course context for MongoDB storage
+      course_code: currentCourse?.courseCode || '',
+      course_name: currentCourse?.courseName || '',
+      unit_id: selectedUnitId || '',
+      unit_title: currentUnit?.title || '',
+      topic_ids: selectedTopicIds,
+      topic_titles: topicsList
+        .filter((t) => selectedTopicIds.includes(t.id))
+        .map((t) => t.title),
+      subtopic_ids: selectedSubtopicIds,
+      subtopic_titles: availableSubtopics
+        .filter((s) => selectedSubtopicIds.includes(s.id))
+        .map((s) => s.title),
     };
 
     try {
@@ -592,23 +761,44 @@ export default function MCQGeneratorPage() {
 
       let newQuestions: MCQQuestion[] = [];
 
+      const selectedTopicTitlesList = topicsList
+        .filter((t) => selectedTopicIds.includes(t.id))
+        .map((t) => t.title);
+
+      const selectedSubtopicTitlesList = availableSubtopics
+        .filter((s) => selectedSubtopicIds.includes(s.id))
+        .map((s) => s.title);
+
+      const defaultQuestionTopic = selectedTopicTitlesList[0] || activeTopicName;
+      const defaultQuestionSubtopic = selectedSubtopicTitlesList[0] || '';
+
       if (apiResponse && (apiResponse.questions || Array.isArray(apiResponse))) {
         const raw = apiResponse.questions || apiResponse;
-        newQuestions = raw.map((q: any, idx: number) => ({
-          id: q.id || `gen-q-${Date.now()}-${idx + 1}`,
-          questionText: q.questionText || q.question_text || q.question || 'Generated Question',
-          cognitiveLevel: (q.cognitiveLevel || q.cognitive_level || q.bloom || 'K2') as BloomLevel,
-          difficulty: q.difficulty || difficulty,
-          points: q.points || 2,
-          unitTopic: activeTopicName,
-          options: (q.options || []).map((opt: any, oIdx: number) => ({
-            id: opt.id || `opt-${idx}-${oIdx}`,
-            text: typeof opt === 'string' ? opt : opt.text || opt.option_text || '',
-            explanation: typeof opt === 'object' ? opt.explanation : undefined,
-          })),
-          correctOptionIndex: q.correctOptionIndex ?? q.correct_option_index ?? 0,
-          explanation: q.explanation || q.reasoning || '',
-        }));
+        newQuestions = raw.map((q: any, idx: number) => {
+          const cogLevel = (q.cognitiveLevel || q.cognitive_level || q.bloom || 'K2') as BloomLevel;
+          const kLevel = q.knowledge_level || BLOOM_CODE_TO_KNOWLEDGE_LEVEL[cogLevel] || 'Understand';
+          const qTopic = q.topic || selectedTopicTitlesList[idx % Math.max(1, selectedTopicTitlesList.length)] || defaultQuestionTopic;
+          const qSubtopic = q.subtopic || q.concept || selectedSubtopicTitlesList[idx % Math.max(1, selectedSubtopicTitlesList.length)] || defaultQuestionSubtopic;
+
+          return {
+            id: q.id || `gen-q-${Date.now()}-${idx + 1}`,
+            questionText: q.questionText || q.question_text || q.question || 'Generated Question',
+            cognitiveLevel: cogLevel,
+            knowledge_level: kLevel,
+            topic: qTopic,
+            subtopic: qSubtopic,
+            difficulty: q.difficulty || difficulty,
+            points: q.points || 2,
+            unitTopic: qTopic,
+            options: (q.options || []).map((opt: any, oIdx: number) => ({
+              id: opt.id || `opt-${idx}-${oIdx}`,
+              text: typeof opt === 'string' ? opt : opt.text || opt.option_text || '',
+              explanation: typeof opt === 'object' ? opt.explanation : undefined,
+            })),
+            correctOptionIndex: q.correctOptionIndex ?? q.correct_option_index ?? 0,
+            explanation: q.explanation || q.reasoning || '',
+          };
+        });
       } else {
         // Build realistic mock questions based on allocated matrix
         let qCounter = 1;
@@ -623,43 +813,48 @@ export default function MCQGeneratorPage() {
             let optD = '';
             let exp = '';
 
+            const cogLevel = level as BloomLevel;
+            const kLevel = BLOOM_CODE_TO_KNOWLEDGE_LEVEL[cogLevel] || 'Understand';
+            const qTopic = selectedTopicTitlesList[(qCounter - 1) % Math.max(1, selectedTopicTitlesList.length)] || defaultQuestionTopic;
+            const qSubtopic = selectedSubtopicTitlesList[(qCounter - 1) % Math.max(1, selectedSubtopicTitlesList.length)] || defaultQuestionSubtopic;
+
             if (level === 'K1') {
-              stem = `[K1 Recall] Which foundational concept best defines ${activeTopicName}?`;
+              stem = `[K1 Recall] Which foundational concept best defines ${qTopic}?`;
               optA = 'It maintains an invariant structure allowing bounded recursive traversals.';
               optB = 'It operates exclusively on secondary disk storage without main RAM.';
               optC = 'It guarantees polynomial reduction to non-deterministic Turing machines.';
               optD = 'It disables garbage collection during execution.';
               exp = 'K1 Remember: Requires basic recall of core definitions and foundational invariant characteristics.';
             } else if (level === 'K2') {
-              stem = `[K2 Understand] How does the architecture of ${activeTopicName} handle asymptotic scaling under high load?`;
+              stem = `[K2 Understand] How does the architecture of ${qTopic} handle asymptotic scaling under high load?`;
               optA = 'By dynamically partitioning elements to maintain linear memory bounds.';
               optB = 'By converting recursive call stacks into iterative loops to prevent stack overflow.';
               optC = 'By utilizing logarithmic height bounds to guarantee sub-quadratic operations.';
               optD = 'By disabling context switching across concurrent worker threads.';
               exp = 'K2 Understand: Evaluates comprehension of scaling behavior and architectural mechanics.';
             } else if (level === 'K3') {
-              stem = `[K3 Apply] Given a system requiring processing of ${activeTopicName}, which implementation strategy should be applied?`;
+              stem = `[K3 Apply] Given a system requiring processing of ${qTopic}, which implementation strategy should be applied?`;
               optA = 'Construct a balanced indexing tree with in-place pointer updates.';
               optB = 'Apply an iterative breadth-first queue traversal with visited node caching.';
               optC = 'Implement a dynamic array with amortized tail insertion.';
               optD = 'Utilize a synchronized multi-producer thread-safe queue.';
               exp = 'K3 Apply: Assesses capability to apply algorithms to practical problem scenarios.';
             } else if (level === 'K4') {
-              stem = `[K4 Analyze] Analyze the trade-offs between space complexity and search time when deploying ${activeTopicName}.`;
+              stem = `[K4 Analyze] Analyze the trade-offs between space complexity and search time when deploying ${qTopic}.`;
               optA = 'Trade-off A: O(1) space with O(N) search vs. O(N) space with O(log N) search.';
               optB = 'Trade-off B: Unlimited memory usage with zero CPU overhead.';
               optC = 'Trade-off C: Immediate constant compilation time with high runtime degradation.';
               optD = 'Trade-off D: High hardware lock contention with low throughput.';
               exp = 'K4 Analyze: Examines deep structural trade-offs between memory footprint and query latency.';
             } else if (level === 'K5') {
-              stem = `[K5 Evaluate] Evaluate the assertion: "${activeTopicName} is strictly superior to classical linear array structures." Under what constraints does this assertion fail?`;
+              stem = `[K5 Evaluate] Evaluate the assertion: "${qTopic} is strictly superior to classical linear array structures." Under what constraints does this assertion fail?`;
               optA = 'Fails when memory overhead per node exceeds cache line sizes for small N.';
               optB = 'Fails when CPU clock speeds exceed 4GHz.';
               optC = 'Fails when compiling with strict optimization flags.';
               optD = 'Never fails under any hardware constraints.';
               exp = 'K5 Evaluate: Critical evaluation of system constraints, cache locality, and performance edge-cases.';
             } else {
-              stem = `[K6 Create] Design an enhanced hybrid variant of ${activeTopicName} that guarantees O(1) lookups while maintaining sorted order traversal.`;
+              stem = `[K6 Create] Design an enhanced hybrid variant of ${qTopic} that guarantees O(1) lookups while maintaining sorted order traversal.`;
               optA = 'Combine a Doubly Linked List for sorted order with a Hash Map mapping keys to node pointers.';
               optB = 'Use a single unindexed array with random element sampling.';
               optC = 'Apply a multi-level priority queue with periodic full sorting.';
@@ -670,10 +865,13 @@ export default function MCQGeneratorPage() {
             newQuestions.push({
               id: qId,
               questionText: stem,
-              cognitiveLevel: level,
+              cognitiveLevel: cogLevel,
+              knowledge_level: kLevel,
+              topic: qTopic,
+              subtopic: qSubtopic,
               difficulty: difficulty === 'Mixed' ? (i % 2 === 0 ? 'Medium' : 'Hard') : difficulty,
               points: level === 'K1' || level === 'K2' ? 2 : level === 'K3' || level === 'K4' ? 4 : 5,
-              unitTopic: activeTopicName,
+              unitTopic: qTopic,
               options: [
                 { id: `${qId}-opt-a`, text: optA, explanation: generateExplanations ? 'Correct choice based on theoretical invariants.' : undefined },
                 { id: `${qId}-opt-b`, text: optB, explanation: generateExplanations ? 'Incorrect. Confuses memory layout with runtime complexity.' : undefined },
@@ -907,7 +1105,10 @@ export default function MCQGeneratorPage() {
                             const courseId = e.target.value;
                             setSelectedCourseId(courseId);
                             const course = coursesList.find((c) => (c.id || c.courseCode) === courseId);
-                            if (course) initializeCascadingSelections(course);
+                            if (course) {
+                              initializeCascadingSelections(course);
+                            }
+                            fetchAndSetCourseDetails(courseId);
                           }}
                           className="w-full rounded-2xl border border-slate-300 dark:border-white/15 bg-slate-50 dark:bg-slate-900 px-3.5 py-2.5 text-xs font-bold text-slate-900 dark:text-white focus:border-cyan-500 focus:outline-none"
                         >
@@ -1151,20 +1352,19 @@ export default function MCQGeneratorPage() {
                         max={50}
                         value={questionCount}
                         onChange={(e) => {
-                          const val = Number(e.target.value);
-                          setQuestionCount(val);
+                          handleQuestionCountChange(Number(e.target.value));
                         }}
                         className="w-full accent-cyan-500 cursor-pointer"
                       />
                       <div className="flex items-center gap-1">
                         <button
-                          onClick={() => setQuestionCount(Math.max(1, questionCount - 1))}
+                          onClick={() => handleQuestionCountChange(questionCount - 1)}
                           className="w-8 h-8 rounded-xl border border-slate-300 dark:border-white/20 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white font-mono font-bold hover:bg-cyan-500 hover:text-black transition-all flex items-center justify-center"
                         >
                           -
                         </button>
                         <button
-                          onClick={() => setQuestionCount(Math.min(50, questionCount + 1))}
+                          onClick={() => handleQuestionCountChange(questionCount + 1)}
                           className="w-8 h-8 rounded-xl border border-slate-300 dark:border-white/20 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white font-mono font-bold hover:bg-cyan-500 hover:text-black transition-all flex items-center justify-center"
                         >
                           +
@@ -1224,10 +1424,18 @@ export default function MCQGeneratorPage() {
                     <div className="flex flex-wrap items-center gap-2 pt-1">
                       <button
                         type="button"
-                        onClick={handleAutoDistribute}
+                        onClick={handleManualAutoDistribute}
                         className="text-[11px] font-mono font-bold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1"
                       >
                         <RefreshCw size={12} /> Auto-Balance Matrix
+                      </button>
+                      <span className="text-slate-300 dark:text-slate-700">|</span>
+                      <button
+                        type="button"
+                        onClick={handleFocusLowerOrder}
+                        className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
+                      >
+                        <Zap size={12} /> LOTS Focus (K1-K3)
                       </button>
                       <span className="text-slate-300 dark:text-slate-700">|</span>
                       <button
@@ -1397,9 +1605,17 @@ export default function MCQGeneratorPage() {
                                 {q.questionText}
                               </p>
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${bloomInfo.bg} ${bloomInfo.color} ${bloomInfo.border} border`}>
-                                  {bloomInfo.name}
+                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold ${bloomInfo.bg} ${bloomInfo.color} ${bloomInfo.border} border`}>
+                                  {q.cognitiveLevel} - {q.knowledge_level || BLOOM_CODE_TO_KNOWLEDGE_LEVEL[q.cognitiveLevel] || bloomInfo.name}
                                 </span>
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border border-indigo-500/20">
+                                  Topic: {q.topic || q.unitTopic || activeTopicName}
+                                </span>
+                                {(q.subtopic || (availableSubtopics.length > 0)) && (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-purple-500/10 text-purple-600 dark:text-purple-300 border border-purple-500/20">
+                                    Subtopic: {q.subtopic || availableSubtopics[0]?.title || 'Core Concepts'}
+                                  </span>
+                                )}
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                                   {q.difficulty}
                                 </span>

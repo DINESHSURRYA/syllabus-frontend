@@ -10,6 +10,9 @@ export interface MCQQuestion {
   id: string;
   questionText: string;
   cognitiveLevel: BloomLevel;
+  knowledge_level?: string;
+  topic?: string;
+  subtopic?: string;
   difficulty: 'Easy' | 'Medium' | 'Hard';
   options: MCQOption[];
   correctOptionIndex: number;

@@ -1,399 +1,388 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { StartInterviewResponse, SubmitAnswerResponse, InterviewReport } from '@/lib/api/evaluator.api';
-import {
-  BeliefStateLevel,
-  DiagnosticStyle,
-  DiagnosticConcept,
-  Misconception,
-  DiagnosticTurn,
-} from '@/types/evaluator';
+import { evaluatorApi, StartInterviewParams } from '@/lib/api/evaluator.api';
 
-export interface DiagnosticSession {
-  threadId: string;
-  topic: string;
-  status: 'In Progress' | 'Completed' | 'Terminated';
-  createdAt: string;
-  totalTopics: number;
-  totalQuestionsAsked: number;
-  totalAnsweredCorrectly: number;
-  report: InterviewReport | null;
-  stopReason: string;
-  turns: DiagnosticTurn[];
-}
-
-export interface AuditLogEntry {
-  id: string;
-  timestamp: string;
-  agentType: 'IngestorAgent' | 'QuestionAgent' | 'EvaluatorAgent' | 'ReportAgent';
-  threadId: string;
-  logLevel: 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
-  eventName: string;
-  model: string;
-  latencyMs: number;
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-  systemPrompt: string;
-  userPrompt: string;
-  rawJsonResponse: string;
-}
-
-export interface ParsedIngestionTopic {
-  id: string;
-  title: string;
-  itemCount: number;
-  concepts: {
-    id: string;
-    name: string;
-    baselineAccuracy: number;
-  }[];
-}
-
-export interface CandidateAssessmentContext {
+export interface CandidateInfo {
   candidate_id: string;
+  candidate_code: string;
   candidate_name: string;
-  assessment_code: string;
+  candidate_email: string;
+  department?: string;
+  course_batch?: string;
+}
+
+export interface AssessmentInfo {
+  attempt_id: string;
+  assessment_id?: string;
+  course_code: string;
   assessment_name: string;
-  submitted_at: string;
-  set_id?: number;
-  score_percentage: number;
-  weak_topics: string[];
-  total_questions?: number;
-  attended_questions?: number;
-  raw_snapshot?: any;
+  total_score?: number;
+  percentage?: number;
+  grade?: string;
+  weak_areas?: string[];
+  strong_areas?: string[];
+  questions?: Array<{
+    question: string;
+    topic?: string;
+    options?: string[];
+    user_answer?: string;
+    correct_answer?: string;
+    is_correct?: boolean;
+    bloom_level?: string;
+    co_code?: string;
+  }>;
 }
 
-interface EvaluatorState {
-  activeSession: DiagnosticSession | null;
-  selectedCandidateAssessment: CandidateAssessmentContext | null;
-  currentReport: InterviewReport | null;
-  sessions: DiagnosticSession[];
-  pastSessions: DiagnosticSession[];
-  auditLogs: AuditLogEntry[];
-  concepts: DiagnosticConcept[];
-  misconceptions: Misconception[];
-  parsedTopics: ParsedIngestionTopic[];
+export interface InterviewQuestion {
+  question: string;
+  topic?: string;
+  concepts?: string[];
+  bloom_level?: string;
+  style?: string;
+  audio_url?: string;
+}
 
-  // Ingestion state
-  contextId: string | null;
-  uploadedFileName: string | null;
-  uploadedFileUrl: string | null;
-  rawSyllabusText: string | null;
-  isIngesting: boolean;
-  ingestError: string | null;
+export interface TurnRecord {
+  turn_number: number;
+  question: string;
+  student_answer: string;
+  time_taken_seconds: number;
+  score?: number;
+  feedback?: string;
+  concept_deltas?: any[];
+}
 
-  // Active turn transient state
-  activeThreadId: string | null;
-  currentTurnIndex: number;
-  candidateResponseInput: string;
-  selectedAuditLog: AuditLogEntry | null;
-  currentAnswerDraft: string;
-  isSubmittingAnswer: boolean;
-  submitError: string | null;
-  isGeneratingReport: boolean;
-  isAudioPlaying: boolean;
-  isMicRecording: boolean;
-  questionTimerSeconds: number;
-  isTimerRunning: boolean;
-  showAdminHint: boolean;
+export interface EvaluatorState {
+  // Setup & Selection State
+  selectedCandidate: CandidateInfo | null;
+  selectedAssessment: AssessmentInfo | null;
+  uploadedFile: { name: string; size: number; context_id?: string } | null;
+  
+  // Live Interview State
+  threadId: string | null;
+  currentTopic: string | null;
+  currentQuestion: InterviewQuestion | null;
+  questions: Array<{ text: string; audioUrl?: string; questionTimerSeconds?: number; raw?: any }>;
+  answers: Array<{ questionId: number; answer: string; timeTaken: number }>;
+  currentQuestionIndex: number;
+  globalTimeMinutes: number;
+  turnHistory: TurnRecord[];
+  turnCount: number;
+  isStarting: boolean;
+  isSubmitting: boolean;
+  isInterviewComplete: boolean;
+  report: any | null;
+  error: string | null;
 
-  // Global settings
-  targetTopic: string;
-  useVoiceOutput: boolean;
-  autoSpeakQuestion: boolean;
+  // Audio / Mic Settings
+  ttsEnabled: boolean;
+  autoPlayAudio: boolean;
+  audioVolume: number;
 
   // Actions
-  setActiveThread: (threadId: string | null) => void;
-  deleteSession: (threadId: string) => void;
-  setSelectedAuditLog: (log: AuditLogEntry | null) => void;
-
-  // Actions
-  setContextId: (id: string | null) => void;
-  setUploadedFile: (fileName: string, rawText: string) => void;
-  setPendingFile: (fileName: string) => void;
-  clearUpload: () => void;
-  setParsedTopics: (topics: ParsedIngestionTopic[]) => void;
-  clearIngestion: () => void;
-
-  startSessionFromApi: (data: StartInterviewResponse) => void;
-  setActiveSessionFromApi: (data: StartInterviewResponse) => void;
-  applyTurnResponseFromApi: (candidateAnswer: string, responseTimeSec: number, data: SubmitAnswerResponse) => void;
-  applySubmitResponseToSession: (data: SubmitAnswerResponse) => void;
-
-  setCandidateResponseInput: (draft: string) => void;
-  setAnswerDraft: (draft: string) => void;
-  setSubmittingAnswer: (isSubmitting: boolean, error?: string | null) => void;
-  setAudioPlaying: (playing: boolean) => void;
-  setMicRecording: (recording: boolean) => void;
-  tickTimer: () => void;
-  resetQuestionTimer: () => void;
-  setShowAdminHint: (show: boolean) => void;
-  setStopReport: (report: InterviewReport | null) => void;
-
-  completeSession: (report?: InterviewReport | null) => void;
-  terminateSession: () => void;
-  clearActiveSession: () => void;
-  clearSession: () => void;
-
-  addAuditLog: (log: Omit<AuditLogEntry, 'id' | 'timestamp'>) => void;
-  clearAuditLogs: () => void;
-
-  setVoiceSettings: (settings: { useVoiceOutput?: boolean; autoSpeakQuestion?: boolean }) => void;
-
-  deletePastSession: (threadId: string) => void;
-  setSelectedCandidateAssessment: (ctx: CandidateAssessmentContext | null) => void;
+  setSelectedCandidate: (candidate: CandidateInfo | null) => void;
+  setSelectedAssessment: (assessment: AssessmentInfo | null) => void;
+  setUploadedFile: (file: { name: string; size: number; context_id?: string } | null) => void;
+  setCurrentQuestionIndex: (index: number | ((prev: number) => number)) => void;
+  setTtsEnabled: (enabled: boolean) => void;
+  setAutoPlayAudio: (autoPlay: boolean) => void;
+  setAudioVolume: (vol: number) => void;
+  uploadFile: (file: File) => Promise<any>;
+  
+  // Main API Workflow Actions
+  generateAndStartInterview: () => Promise<string>;
+  submitAnswer: (answerText: string, timeTakenSeconds?: number) => Promise<void>;
+  stopInterview: () => Promise<void>;
+  resetSession: () => void;
 }
 
-function buildTurn(
-  turnNumber: number,
-  genQ: {
-    question_id?: string;
-    question?: string;
-    target_concepts?: string[];
-    audio_url?: string;
-    question_type?: string;
-    style?: string;
-  }
-): DiagnosticTurn {
-  return {
-    turnNumber,
-    timestamp: new Date().toISOString(),
-    topic: (genQ.target_concepts && genQ.target_concepts[0]) || 'General Concept',
-    questionId: genQ.question_id || `q_${turnNumber}`,
-    questionStem: genQ.question || '',
-    targetConcepts: genQ.target_concepts || [],
-    candidateAnswer: '',
-    responseTimeSeconds: 0,
-    evaluationScore: null,
-    audioUrl: genQ.audio_url || '',
-    conceptDeltas: [],
-    interventions: [],
-    aiReasoningSummary: '',
-    style: (genQ.style as DiagnosticStyle) || (genQ.question_type as DiagnosticStyle) || 'Explanation',
-  };
-}
-
-export const useEvaluatorStore = create<EvaluatorState>()(
-  persist(
-    (set, get) => ({
-      activeSession: null,
-      selectedCandidateAssessment: null,
-      currentReport: null,
-      setSelectedCandidateAssessment: (ctx) => set({ selectedCandidateAssessment: ctx }),
-      sessions: [],
-      pastSessions: [],
-      auditLogs: [],
-      concepts: [],
-      misconceptions: [],
-      parsedTopics: [],
-
-      contextId: null,
-      uploadedFileName: null,
-      uploadedFileUrl: null,
-      rawSyllabusText: null,
-      isIngesting: false,
-      ingestError: null,
-
-      activeThreadId: null,
-      currentTurnIndex: 0,
-      candidateResponseInput: '',
-      selectedAuditLog: null,
-
-      setActiveThread: (id) => set({ activeThreadId: id }),
-      deleteSession: (threadId) =>
-        set((s) => ({
-          sessions: s.sessions.filter((x) => x.threadId !== threadId),
-          pastSessions: s.pastSessions.filter((x) => x.threadId !== threadId),
-        })),
-      setSelectedAuditLog: (log) => set({ selectedAuditLog: log }),
-
-      currentAnswerDraft: '',
-      isSubmittingAnswer: false,
-      submitError: null,
-      isGeneratingReport: false,
-      isAudioPlaying: false,
-      isMicRecording: false,
-      questionTimerSeconds: 0,
-      isTimerRunning: false,
-      showAdminHint: false,
-
-      targetTopic: 'Comprehensive Assessment',
-      useVoiceOutput: false,
-      autoSpeakQuestion: false,
-
-      setContextId: (id) => set({ contextId: id }),
-      setUploadedFile: (fileName, rawText) =>
-        set({ uploadedFileName: fileName, rawSyllabusText: rawText, ingestError: null }),
-      setPendingFile: (fileName) => set({ uploadedFileName: fileName }),
-      clearUpload: () => set({ uploadedFileName: null, rawSyllabusText: null, contextId: null }),
-
-      setParsedTopics: (topics) => set({ parsedTopics: topics }),
-
-      clearIngestion: () =>
-        set({ uploadedFileName: null, rawSyllabusText: null, parsedTopics: [], contextId: null, ingestError: null }),
-
-      startSessionFromApi: (data) => {
-        const firstTurn = buildTurn(1, { ...(data.generated_question || {}), audio_url: data.audio_url });
-        const session: DiagnosticSession = {
-          threadId: data.thread_id,
-          topic: (data.generated_question?.target_concepts && data.generated_question.target_concepts[0]) || 'Diagnostic Assessment',
-          status: 'In Progress',
-          createdAt: new Date().toISOString(),
-          totalTopics: data.total_topics || 1,
-          totalQuestionsAsked: 1,
-          totalAnsweredCorrectly: 0,
-          report: null,
-          stopReason: '',
-          turns: [firstTurn],
-        };
-        set((s) => ({
-          activeSession: session,
-          activeThreadId: data.thread_id,
-          currentTurnIndex: 0,
-          sessions: [session, ...s.sessions],
-          currentAnswerDraft: '',
-          candidateResponseInput: '',
-          submitError: null,
-        }));
+export const useEvaluatorStore = create<EvaluatorState>((set, get) => ({
+  selectedCandidate: {
+    candidate_id: 'CAND-2026-001',
+    candidate_code: 'ALEX_MERCER',
+    candidate_name: 'Alex Mercer',
+    candidate_email: 'alex.mercer@university.edu',
+    department: 'Computer Science & Engineering',
+    course_batch: 'CS-2026-A',
+  },
+  selectedAssessment: {
+    attempt_id: 'ATT-2026-101',
+    assessment_id: 'ASM-DS-01',
+    course_code: 'CS101',
+    assessment_name: 'Data Structures & Algorithms Midterm',
+    percentage: 78.5,
+    grade: 'B+',
+    weak_areas: ['Binary Search Trees', 'Graph Traversal', 'Dynamic Programming'],
+    strong_areas: ['Arrays & Hash Maps', 'Linked Lists'],
+    questions: [
+      {
+        question: 'What is the worst-case time complexity of search operations in an unbalanced Binary Search Tree?',
+        topic: 'Binary Search Trees',
+        options: ['O(1)', 'O(log n)', 'O(n)', 'O(n^2)'],
+        user_answer: 'O(log n)',
+        correct_answer: 'O(n)',
+        is_correct: false,
+        bloom_level: 'K2',
+        co_code: 'CO2',
       },
-
-      setActiveSessionFromApi: (data) => {
-        get().startSessionFromApi(data);
+      {
+        question: 'Which data structure is primarily used to implement Breadth-First Search (BFS) in graphs?',
+        topic: 'Graph Traversal',
+        options: ['Queue', 'Stack', 'Heap', 'Tree'],
+        user_answer: 'Stack',
+        correct_answer: 'Queue',
+        is_correct: false,
+        bloom_level: 'K3',
+        co_code: 'CO3',
       },
-
-      applyTurnResponseFromApi: (candidateAnswer, responseTimeSec, data) => {
-        const state = get();
-        if (!state.activeSession) return;
-
-        const currentTurns = state.activeSession.turns;
-        const currentTurnIdx = currentTurns.length - 1;
-
-        if (currentTurnIdx < 0) return;
-
-        const turnToUpdate = { ...currentTurns[currentTurnIdx] };
-        turnToUpdate.candidateAnswer = candidateAnswer;
-        turnToUpdate.responseTimeSeconds = responseTimeSec;
-
-        if (data.evaluation) {
-          turnToUpdate.evaluationScore = typeof data.evaluation.score === 'number' ? data.evaluation.score : null;
-          turnToUpdate.evaluationFeedback = data.evaluation.feedback || '';
-        }
-
-        const isComplete = Boolean(data.is_complete || data.stop_reason);
-        const updatedTurns = [...currentTurns.slice(0, currentTurnIdx), turnToUpdate];
-
-        if (!isComplete && data.generated_question) {
-          const newNextTurn = buildTurn(currentTurns.length + 1, { ...(data.generated_question || {}), audio_url: data.audio_url });
-          updatedTurns.push(newNextTurn);
-        }
-
-        const newSessionStatus = isComplete ? 'Completed' : 'In Progress';
-
-        const updatedSession: DiagnosticSession = {
-          ...state.activeSession,
-          status: newSessionStatus,
-          stopReason: data.stop_reason || '',
-          report: data.report || state.activeSession.report,
-          totalQuestionsAsked: updatedTurns.length,
-          totalAnsweredCorrectly: data.total_answered_correctly ?? state.activeSession.totalAnsweredCorrectly,
-          turns: updatedTurns,
-        };
-
-        const pastSessions = isComplete
-          ? [updatedSession, ...state.pastSessions.filter((s) => s.threadId !== updatedSession.threadId)]
-          : state.pastSessions;
-
-        set({
-          activeSession: updatedSession,
-          currentTurnIndex: updatedTurns.length - 1,
-          pastSessions,
-          sessions: state.sessions.map((s) => (s.threadId === updatedSession.threadId ? updatedSession : s)),
-          currentAnswerDraft: '',
-          candidateResponseInput: '',
-          isSubmittingAnswer: false,
-          submitError: null,
-        });
+      {
+        question: 'What is the primary characteristic of optimal substructure in Dynamic Programming?',
+        topic: 'Dynamic Programming',
+        options: [
+          'The problem can be solved greedily at each step',
+          'An optimal solution contains optimal solutions to its subproblems',
+          'All subproblems must be independent',
+          'The algorithm uses constant space'
+        ],
+        user_answer: 'The problem can be solved greedily at each step',
+        correct_answer: 'An optimal solution contains optimal solutions to its subproblems',
+        is_correct: false,
+        bloom_level: 'K4',
+        co_code: 'CO4',
       },
+    ],
+  },
+  uploadedFile: null,
 
-      applySubmitResponseToSession: (data) => {
-        const state = get();
-        state.applyTurnResponseFromApi(state.candidateResponseInput || state.currentAnswerDraft, state.questionTimerSeconds, data);
-      },
+  threadId: null,
+  currentTopic: null,
+  currentQuestion: null,
+  questions: [],
+  answers: [],
+  currentQuestionIndex: 0,
+  globalTimeMinutes: 15,
+  turnHistory: [],
+  turnCount: 0,
+  isStarting: false,
+  isSubmitting: false,
+  isInterviewComplete: false,
+  report: null,
+  error: null,
 
-      setCandidateResponseInput: (draft) => set({ candidateResponseInput: draft, currentAnswerDraft: draft }),
-      setAnswerDraft: (draft) => set({ candidateResponseInput: draft, currentAnswerDraft: draft }),
-      setSubmittingAnswer: (isSubmitting, error = null) =>
-        set({ isSubmittingAnswer: isSubmitting, submitError: error }),
-      setAudioPlaying: (playing) => set({ isAudioPlaying: playing }),
-      setMicRecording: (recording) => set({ isMicRecording: recording }),
-      tickTimer: () => set((s) => ({ questionTimerSeconds: s.questionTimerSeconds + 1 })),
-      resetQuestionTimer: () => set({ questionTimerSeconds: 0 }),
-      setShowAdminHint: (show) => set({ showAdminHint: show }),
-      setStopReport: (report) => {
-        const active = get().activeSession;
-        if (active) set({ activeSession: { ...active, report } });
-      },
+  ttsEnabled: true,
+  autoPlayAudio: true,
+  audioVolume: 0.9,
 
-      completeSession: (report = null) => {
-        const state = get();
-        if (!state.activeSession) return;
-        const finished: DiagnosticSession = {
-          ...state.activeSession,
-          status: 'Completed',
-          report: report || state.activeSession.report,
-        };
-        set({
-          activeSession: finished,
-          pastSessions: [finished, ...state.pastSessions.filter((s) => s.threadId !== finished.threadId)],
-        });
-      },
+  setSelectedCandidate: (candidate) => set({ selectedCandidate: candidate }),
+  setSelectedAssessment: (assessment) => set({ selectedAssessment: assessment }),
+  setUploadedFile: (file) => set({ uploadedFile: file }),
+  setCurrentQuestionIndex: (indexOrFn) => set((state) => ({
+    currentQuestionIndex: typeof indexOrFn === 'function' ? indexOrFn(state.currentQuestionIndex) : indexOrFn
+  })),
+  setTtsEnabled: (enabled) => set({ ttsEnabled: enabled }),
+  setAutoPlayAudio: (autoPlay) => set({ autoPlayAudio: autoPlay }),
+  setAudioVolume: (vol) => set({ audioVolume: vol }),
 
-      terminateSession: () => {
-        const state = get();
-        if (!state.activeSession) return;
-        const terminated: DiagnosticSession = {
-          ...state.activeSession,
-          status: 'Terminated',
-        };
-        set({
-          activeSession: terminated,
-          pastSessions: [terminated, ...state.pastSessions.filter((s) => s.threadId !== terminated.threadId)],
-        });
-      },
-
-      clearActiveSession: () => set({ activeSession: null }),
-      clearSession: () => set({ activeSession: null }),
-
-      addAuditLog: (log) => {
-        const entry: AuditLogEntry = {
-          ...log,
-          id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-          timestamp: new Date().toISOString(),
-        };
-        set((s) => ({ auditLogs: [entry, ...s.auditLogs].slice(0, 100) }));
-      },
-
-      clearAuditLogs: () => set({ auditLogs: [] }),
-
-      setVoiceSettings: (settings) =>
-        set((s) => ({
-          useVoiceOutput: settings.useVoiceOutput ?? s.useVoiceOutput,
-          autoSpeakQuestion: settings.autoSpeakQuestion ?? s.autoSpeakQuestion,
-        })),
-
-      deletePastSession: (threadId) =>
-        set((s) => ({ pastSessions: s.pastSessions.filter((session) => session.threadId !== threadId) })),
-    }),
-    {
-      name: 'evaluator-store',
-      partialize: (state) => ({
-        pastSessions: state.pastSessions,
-        auditLogs: state.auditLogs,
-        useVoiceOutput: state.useVoiceOutput,
-        autoSpeakQuestion: state.autoSpeakQuestion,
-        selectedCandidateAssessment: state.selectedCandidateAssessment,
-      }),
+  uploadFile: async (file: File) => {
+    if (file.size > 10 * 1024 * 1024) {
+      throw new Error('File too large. Max 10MB allowed.');
     }
-  )
-);
+    const data = await evaluatorApi.uploadFile(file);
+    set({
+      uploadedFile: {
+        name: file.name,
+        size: file.size,
+        context_id: data.context_id,
+      },
+    });
+    return data;
+  },
+
+  generateAndStartInterview: async () => {
+    const { selectedCandidate, selectedAssessment, uploadedFile } = get();
+    set({ isStarting: true, error: null });
+
+    try {
+      let params: StartInterviewParams = {};
+
+      if (uploadedFile?.context_id) {
+        params.context_id = uploadedFile.context_id;
+      } else if (selectedAssessment?.attempt_id || selectedCandidate) {
+        params.candidate_id = selectedCandidate?.candidate_id || 'CAND-USER';
+        params.attempt_id = selectedAssessment?.attempt_id || 'ATT-USER';
+
+        try {
+          // 1. Export exact Phase 3 JSON schema from Phase 2 PostgreSQL
+          const attemptIdToExport = selectedAssessment?.attempt_id || 'ATT-2026-101';
+          const exportedPayload = await evaluatorApi.exportAttempt(attemptIdToExport);
+
+          // 2. Ingest payload into Phase 3 FastAPI backend (:8001) via /upload_json
+          const uploadRes = await evaluatorApi.uploadJson(exportedPayload);
+          if (uploadRes?.context_id) {
+            params.context_id = uploadRes.context_id;
+          } else {
+            params.json_payload = exportedPayload;
+          }
+        } catch (exportErr) {
+          console.warn('Phase 2 JSON export warning, using direct candidate payload:', exportErr);
+          params.json_payload = {
+            set_id: 1,
+            topic: selectedAssessment?.assessment_name || selectedAssessment?.course_code || 'Assessment Evaluation',
+            time: 15,
+            difficulty: 'medium',
+            questions: selectedAssessment?.questions || []
+          };
+        }
+      } else {
+        throw new Error('Please select a Candidate & Assessment or upload a JSON assessment file.');
+      }
+
+      const res = await evaluatorApi.startInterview(params);
+
+      const qObj = res.generated_question || {};
+      const newQuestion: InterviewQuestion = {
+        question: qObj.question || 'Can you explain the core concepts of this assessment topic?',
+        topic: res.topic || qObj.topic || selectedAssessment?.course_code || 'General',
+        concepts: qObj.concepts || [],
+        bloom_level: qObj.bloom_level || 'K3',
+        style: qObj.style || 'Explanation',
+        audio_url: res.audio_url || qObj.audio_url,
+      };
+
+      const gTime = res.global_time_minutes || 15;
+      const qTimerSec = qObj.question_timer_seconds || 45;
+      const firstQItem = {
+        text: newQuestion.question,
+        audioUrl: res.audio_url || qObj.audio_url,
+        questionTimerSeconds: qTimerSec,
+        raw: qObj,
+      };
+
+      set({
+        threadId: res.thread_id,
+        currentTopic: res.topic || newQuestion.topic || 'Assessment Evaluation',
+        currentQuestion: newQuestion,
+        questions: [firstQItem],
+        answers: [],
+        currentQuestionIndex: 0,
+        globalTimeMinutes: gTime,
+        turnHistory: [],
+        turnCount: 1,
+        isStarting: false,
+        isInterviewComplete: false,
+        report: null,
+      });
+
+      return res.thread_id;
+    } catch (err: any) {
+      const msg = err.message || 'Failed to generate interview';
+      set({ isStarting: false, error: msg });
+      throw new Error(msg);
+    }
+  },
+
+  submitAnswer: async (answerText: string, timeTakenSeconds: number = 0) => {
+    const { threadId, currentQuestion, turnHistory, turnCount, currentQuestionIndex, answers } = get();
+    if (!threadId) throw new Error('No active interview session');
+
+    set({ 
+      isSubmitting: true, 
+      error: null,
+      answers: [...answers, { questionId: currentQuestionIndex, answer: answerText, timeTaken: timeTakenSeconds }]
+    });
+
+    try {
+      const res = await evaluatorApi.submitAnswer({
+        thread_id: threadId,
+        student_answer: answerText,
+        time_taken_seconds: timeTakenSeconds,
+      });
+
+      const newTurnRecord: TurnRecord = {
+        turn_number: turnCount,
+        question: currentQuestion?.question || '',
+        student_answer: answerText,
+        time_taken_seconds: timeTakenSeconds,
+        score: res.current_evaluation?.score,
+        feedback: res.current_evaluation?.feedback,
+      };
+
+      if (res.is_complete || res.status === 'Completed') {
+        set({
+          turnHistory: [...turnHistory, newTurnRecord],
+          isSubmitting: false,
+          isInterviewComplete: true,
+          report: res.report || res.evaluation_report,
+        });
+      } else {
+        const qObj = res.generated_question || {};
+        const nextQText = qObj.question || 'Thank you. Now, let us dive deeper into the next concept.';
+        const qTimerSec = qObj.question_timer_seconds || 45;
+        const nextQuestion: InterviewQuestion = {
+          question: nextQText,
+          topic: res.topic || qObj.topic || get().currentTopic,
+          concepts: qObj.concepts || [],
+          bloom_level: qObj.bloom_level || 'K3',
+          style: qObj.style || 'Application',
+          audio_url: res.audio_url || qObj.audio_url,
+        };
+
+        const nextQItem = {
+          text: nextQText,
+          audioUrl: res.audio_url || qObj.audio_url,
+          questionTimerSeconds: qTimerSec,
+          raw: qObj,
+        };
+
+        set((state) => ({
+          turnHistory: [...state.turnHistory, newTurnRecord],
+          turnCount: state.turnCount + 1,
+          currentQuestion: nextQuestion,
+          questions: [...state.questions, nextQItem],
+          currentTopic: nextQuestion.topic || state.currentTopic,
+          isSubmitting: false,
+        }));
+      }
+    } catch (err: any) {
+      set({ isSubmitting: false, error: err.message || 'Error submitting answer' });
+      throw err;
+    }
+  },
+
+  stopInterview: async () => {
+    const { threadId } = get();
+    if (!threadId) return;
+
+    set({ isSubmitting: true, error: null });
+
+    try {
+      const res = await evaluatorApi.stopInterview(threadId);
+      set({
+        isSubmitting: false,
+        isInterviewComplete: true,
+        report: res.report || res.evaluation_report || res,
+      });
+    } catch (err: any) {
+      set({ isSubmitting: false, error: err.message || 'Error stopping interview' });
+    }
+  },
+
+  resetSession: () => {
+    set({
+      threadId: null,
+      currentTopic: null,
+      currentQuestion: null,
+      questions: [],
+      answers: [],
+      currentQuestionIndex: 0,
+      globalTimeMinutes: 15,
+      turnHistory: [],
+      turnCount: 0,
+      isStarting: false,
+      isSubmitting: false,
+      isInterviewComplete: false,
+      report: null,
+      error: null,
+      uploadedFile: null,
+    });
+  },
+}));

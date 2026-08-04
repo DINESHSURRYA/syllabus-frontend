@@ -62,13 +62,12 @@ const mcqNavItems = [
   { href: '/exam/results/attempt-101', label: 'Exam Results Review', icon: Award, leadText: 'Scorecard & Bloom breakdown' },
 ];
 
-// Module 3: Diagnostic Evaluator Navigation Items
+// Module 3: Phase 3 Evaluator Navigation Items
 const evaluatorNavItems = [
-  { href: '/evaluator', label: 'Assessment Ingestion', icon: GitFork, leadText: 'Select candidate or upload JSON' },
-  { href: '/evaluator/interview', label: 'Interactive Interview', icon: Mic, leadText: 'Diagnostic audio-visual interview' },
-  { href: '/evaluator/report', label: 'Diagnostic Report', icon: PieChart, leadText: 'Candidate belief & mastery report' },
-  { href: '/evaluator/admin', label: 'Session Dashboard', icon: LayoutDashboard, leadText: 'Manage diagnostic candidate sessions' },
-  { href: '/evaluator/audit-logs', label: 'LLM Audit Logs', icon: FileCode2, leadText: 'Inspect prompts, JSON & metrics' },
+  { href: '/evaluator', label: 'Phase 3 AI Evaluator', icon: Mic, leadText: 'Candidate & Assessment setup engine' },
+  { href: '/evaluator/interview', label: 'Live Interview Room', icon: Cpu, leadText: 'Adaptive voice & text assessment' },
+  { href: '/evaluator/report', label: 'Evaluation Report', icon: FileText, leadText: 'Candidate scorecard & Bloom metrics' },
+  { href: '/evaluator/admin', label: 'Evaluator Admin & Logs', icon: Stethoscope, leadText: 'Session history & LLM telemetry' },
 ];
 
 // Module 4: Doubts Navigation Items
@@ -86,7 +85,7 @@ interface ModuleConfig {
   shortLabel: string;
   icon: LucideIcon;
   badge: string;
-  colorTheme: 'cyan' | 'emerald' | 'indigo' | 'amber';
+  colorTheme: 'cyan' | 'emerald' | 'amber';
   defaultHref: string;
   description: string;
   items: Array<{ href: string; label: string; icon: LucideIcon; leadText: string }>;
@@ -117,13 +116,13 @@ const modules: ModuleConfig[] = [
   },
   {
     id: 'evaluator',
-    label: 'DIAGNOSTIC EVALUATOR',
+    label: 'PHASE 3 EVALUATOR',
     shortLabel: 'Evaluator',
-    icon: Stethoscope,
+    icon: Mic,
     badge: 'AI',
-    colorTheme: 'indigo',
+    colorTheme: 'cyan',
     defaultHref: '/evaluator',
-    description: 'Ingestion, Audio Interview & Audit Logs',
+    description: 'Phase 3 LangGraph AI Voice/Text Evaluator',
     items: evaluatorNavItems
   },
   {
@@ -140,11 +139,11 @@ const modules: ModuleConfig[] = [
 ];
 
 const getModuleFromPath = (pathname: string): ModuleType => {
-  if (pathname.startsWith('/mcq') || pathname.startsWith('/assessments') || pathname.startsWith('/exam')) {
-    return 'mcq';
-  }
   if (pathname.startsWith('/evaluator')) {
     return 'evaluator';
+  }
+  if (pathname.startsWith('/mcq') || pathname.startsWith('/assessments') || pathname.startsWith('/exam')) {
+    return 'mcq';
   }
   if (pathname.startsWith('/doubts')) {
     return 'doubts';
@@ -153,10 +152,10 @@ const getModuleFromPath = (pathname: string): ModuleType => {
 };
 
 const moduleAccent = {
-  studio:    { border: 'border-indigo-500/70',  bg: 'bg-indigo-500/12',  text: 'text-indigo-400',  glow: 'shadow-md', activePill: 'bg-indigo-600 text-white', tabActive: 'bg-indigo-600 text-white border-indigo-700', tabHover: 'hover:bg-indigo-500/15 hover:text-indigo-300' },
-  mcq:       { border: 'border-emerald-500/70', bg: 'bg-emerald-500/12', text: 'text-emerald-400', glow: 'shadow-md', activePill: 'bg-emerald-600 text-white', tabActive: 'bg-emerald-600 text-white border-emerald-700', tabHover: 'hover:bg-emerald-500/15 hover:text-emerald-300' },
-  evaluator: { border: 'border-indigo-500/70',  bg: 'bg-indigo-500/12',  text: 'text-indigo-400',  glow: 'shadow-md', activePill: 'bg-indigo-600 text-white', tabActive: 'bg-indigo-600 text-white border-indigo-700', tabHover: 'hover:bg-indigo-500/15 hover:text-indigo-300' },
-  doubts:    { border: 'border-amber-500/70',   bg: 'bg-amber-500/12',   text: 'text-amber-400',   glow: 'shadow-md', activePill: 'bg-amber-600 text-white', tabActive: 'bg-amber-600 text-white border-amber-700', tabHover: 'hover:bg-amber-500/15 hover:text-amber-300' },
+  studio:    { border: 'border-indigo-500/70',  bg: 'bg-indigo-500/12',  text: 'text-indigo-600 dark:text-indigo-400',  glow: 'shadow-md', activePill: 'bg-indigo-600 text-white', tabActive: 'bg-indigo-600 text-white border-indigo-700 dark:bg-indigo-700', tabHover: 'hover:bg-indigo-500/15 hover:text-indigo-300' },
+  mcq:       { border: 'border-emerald-500/70', bg: 'bg-emerald-500/12', text: 'text-emerald-600 dark:text-emerald-400', glow: 'shadow-md', activePill: 'bg-emerald-600 text-white', tabActive: 'bg-emerald-600 text-white border-emerald-700 dark:bg-emerald-700', tabHover: 'hover:bg-emerald-500/15 hover:text-emerald-300' },
+  evaluator: { border: 'border-cyan-500/70',    bg: 'bg-cyan-500/12',    text: 'text-cyan-600 dark:text-cyan-400',    glow: 'shadow-md', activePill: 'bg-cyan-600 text-white', tabActive: 'bg-cyan-600 text-white border-cyan-700 dark:bg-cyan-700', tabHover: 'hover:bg-cyan-500/15 hover:text-cyan-300' },
+  doubts:    { border: 'border-amber-500/70',   bg: 'bg-amber-500/12',   text: 'text-amber-600 dark:text-amber-400',   glow: 'shadow-md', activePill: 'bg-amber-600 text-white', tabActive: 'bg-amber-600 text-white border-amber-700 dark:bg-amber-700', tabHover: 'hover:bg-amber-500/15 hover:text-amber-300' },
 };
 
 // Memoized Sidebar Sub-Component
@@ -216,13 +215,13 @@ const SidebarNav = React.memo(function SidebarNav({
                   onClick={() => handleModuleClick(mod)}
                   className={`relative w-8 h-8 flex items-center justify-center rounded-lg text-xs font-mono font-bold transition-all duration-200 cursor-pointer ${
                     isActive
-                      ? `${a.text} bg-[var(--bg-card)] ${a.tabActive} shadow-sm z-10`
+                      ? `${a.tabActive} shadow-sm z-10`
                       : `text-[var(--text-muted)] border border-transparent hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]`
                   }`}
                   aria-label={`Switch to ${mod.label}`}
                   title={`${mod.label}: ${mod.description}`}
                 >
-                  <Icon size={15} className="shrink-0" />
+                  <Icon size={15} className={`shrink-0 ${isActive ? 'text-white' : ''}`} />
                 </button>
               );
             })}
@@ -240,7 +239,7 @@ const SidebarNav = React.memo(function SidebarNav({
                   onClick={() => handleModuleClick(mod)}
                   className={`relative w-full flex flex-col items-center justify-center gap-1 px-1 py-1.5 rounded-t-xl text-[10px] font-mono font-bold uppercase tracking-tighter transition-all duration-200 cursor-pointer text-center min-w-0 ${
                     isActive
-                      ? `${a.text} bg-[var(--bg-card)] ${a.tabActive} border-t border-x border-b-0 shadow-sm z-10`
+                      ? `${a.tabActive} border-t border-x border-b-0 shadow-sm z-10`
                       : `text-[var(--text-muted)] border border-transparent hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]`
                   }`}
                   aria-label={`Switch to ${mod.label}`}
@@ -253,8 +252,8 @@ const SidebarNav = React.memo(function SidebarNav({
                       transition={{ type: 'spring', stiffness: 400, damping: 35 }}
                     />
                   )}
-                  <Icon size={14} className="shrink-0" />
-                  <span className="w-full text-center text-[10px] font-bold leading-tight whitespace-nowrap overflow-visible">
+                  <Icon size={14} className={`shrink-0 ${isActive ? 'text-white' : ''}`} />
+                  <span className={`w-full text-center text-[10px] font-bold leading-tight whitespace-nowrap overflow-visible ${isActive ? 'text-white' : ''}`}>
                     {mod.shortLabel}
                   </span>
                 </button>
@@ -264,13 +263,14 @@ const SidebarNav = React.memo(function SidebarNav({
         )}
       </div>
 
+
       {/* MODULE HEADER */}
       {isCollapsed ? (
         <div className="py-2 px-2 flex justify-center shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-card)]">
           <span className={`w-8 h-1 rounded-full ${
             activeModule === 'studio' ? 'bg-indigo-500' :
             activeModule === 'mcq' ? 'bg-emerald-500' :
-            activeModule === 'evaluator' ? 'bg-indigo-500' : 'bg-amber-500'
+            activeModule === 'evaluator' ? 'bg-cyan-500' : 'bg-amber-500'
           }`} title={`${currentModuleConfig.label} Active - ${currentModuleConfig.description}`} />
         </div>
       ) : (
@@ -292,7 +292,7 @@ const SidebarNav = React.memo(function SidebarNav({
                 : activeModule === 'mcq'
                 ? 'bg-emerald-800 text-white border-emerald-700'
                 : activeModule === 'evaluator'
-                ? 'bg-indigo-800 text-white border-indigo-700'
+                ? 'bg-cyan-800 text-white border-cyan-700'
                 : 'bg-amber-800 text-white border-amber-700'
             }`}>
               {currentModuleConfig.badge}
@@ -316,9 +316,7 @@ const SidebarNav = React.memo(function SidebarNav({
           {currentModuleConfig.items.map((item) => {
             const Icon = item.icon;
             const active = pathname === item.href ||
-                           (item.href.includes('/exam/results') && pathname.startsWith('/exam/results')) ||
-                           (item.href.includes('/evaluator/report') && pathname.startsWith('/evaluator/report')) ||
-                           (item.href.includes('/evaluator/admin/transcript') && pathname.startsWith('/evaluator/admin/transcript'));
+                           (item.href.includes('/exam/results') && pathname.startsWith('/exam/results'));
             const isHovered = hoveredNavItem === item.href;
 
             if (isCollapsed) {
@@ -464,7 +462,9 @@ const HeaderBar = React.memo(function HeaderBar({
               ? 'border-blue-700 bg-[#1e40af] text-white'
               : activeModule === 'mcq'
               ? 'border-emerald-700 bg-emerald-800 text-white'
-              : 'border-indigo-700 bg-indigo-800 text-white'
+              : activeModule === 'evaluator'
+              ? 'border-cyan-700 bg-cyan-800 text-white'
+              : 'border-amber-700 bg-amber-800 text-white'
           }`}>
             {currentModuleConfig.label}
           </span>

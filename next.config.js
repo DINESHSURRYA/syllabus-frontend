@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const BACKEND_API_URL =
-  process.env.NEXT_PUBLIC_EVALUATOR_API_URL || 'http://localhost:8000';
+  process.env.NEXT_PUBLIC_EVALUATOR_API_URL || 'http://127.0.0.1:8001';
 
 const nextConfig = {
   reactStrictMode: true,

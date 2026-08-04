@@ -13,14 +13,6 @@ export const ROUTES = {
   CURRICULUM: '/curriculum',
   TIMELINE: '/timeline',
   ANALYTICS: '/analytics',
-  EVALUATOR: {
-    INDEX: '/evaluator',
-    INTERVIEW: '/evaluator/interview',
-    REPORT: (id?: string) => id ? `/evaluator/report?id=${id}` : '/evaluator/report',
-    ADMIN: '/evaluator/admin',
-    TRANSCRIPT: (threadId: string) => `/evaluator/admin/transcript/${threadId}`,
-    AUDIT_LOGS: '/evaluator/audit-logs',
-  },
   MCQ: {
     BANK: '/mcq/bank',
     GENERATOR: '/mcq/generator',

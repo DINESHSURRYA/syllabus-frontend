@@ -53,7 +53,7 @@ export function buildUrl(endpoint: string, params?: Record<string, any>, skipBas
     fullUrl = endpoint;
   } else {
     // Relative routes pointing to Next.js proxy (like /api/evaluator) should remain relative in browser
-    if (endpoint.startsWith('/api/evaluator') || endpoint.startsWith('/api/syllabus/check-course-code')) {
+    if (endpoint.startsWith('/api/syllabus/check-course-code')) {
       fullUrl = endpoint;
     } else {
       const base = API_CONFIG.baseUrl.endsWith('/') ? API_CONFIG.baseUrl.slice(0, -1) : API_CONFIG.baseUrl;

@@ -31,6 +31,10 @@ export const API = {
     process: '/api/syllabus/process',
     generateCoPoMapping: '/api/syllabus/generate-co-po-mapping',
     saved: '/api/syllabus/saved',
+    uploadDynamic: '/api/upload',
+    getJob: (id: string) => `/api/jobs/${encodeURIComponent(id)}`,
+    saveCourse: '/api/course/save',
+    updateMapping: (id: string) => `/api/course/${encodeURIComponent(id)}/mapping`,
   },
 
   curriculum: {
@@ -58,18 +62,6 @@ export const API = {
 
   analytics: {
     dashboard: '/api/analytics/dashboard',
-  },
-
-  evaluator: {
-    upload: '/api/evaluator/upload',
-    startInterview: '/api/evaluator/start_interview',
-    submitAnswer: '/api/evaluator/submit_answer',
-    stopInterview: '/api/evaluator/stop_interview',
-    chat: '/api/evaluator/chat',
-    adminInterviews: '/api/evaluator/admin/interviews',
-    adminInterviewDetail: (threadId: string) => `/api/evaluator/admin/interviews/${threadId}`,
-    adminLogs: '/api/evaluator/admin/logs',
-    report: (threadId: string) => `/api/evaluator/report/${threadId}`,
   },
 
   upload: {

@@ -453,4 +453,31 @@ html.font-family-mono li {
   font-family: var(--font-jetbrains-mono), 'JetBrains Mono', 'Fira Code', Consolas, monospace !important;
 }
 
+@keyframes voiceBar {
+  0%, 100% {
+    height: 6px;
+  }
+  50% {
+    height: 28px;
+  }
+}
+
+.animate-voice-bar {
+  animation: voiceBar 0.8s ease-in-out infinite;
+}
+
+@keyframes spinSlow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spinSlow 12s linear infinite;
+}
+
+
 

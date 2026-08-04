@@ -55,13 +55,17 @@ import { AppShell } from '@/components/layout/app-shell';
 import { useSyllabusStore, emptySyllabus, useGuideStore } from '@/stores';
 import { UnitItem, TopicItem } from '@/types';
 import { generateTopicTimeline, formatHours, TopicAllocationInput } from '@/lib/services/timeline-service';
-import { uploadAndExtractSyllabusBackend, generateCoPoMapping } from '@/lib/api-client';
+import { uploadAndExtractSyllabusBackend, generateCoPoMapping, saveVerifiedCourse as saveVerifiedCourseApi } from '@/lib/api-client';
 import { syllabusApi } from '@/lib/api';
 import { sanitizeText } from '@/lib/normalizer';
 import { toast } from 'sonner';
 
 import { AIProcessingStatus } from '@/components/syllabus/ai-processing-status';
+import { Phase1ExtractionProgress } from '@/components/syllabus/phase1-extraction-progress';
 import { NotificationCenter } from '@/components/notifications/notification-center';
+import DynamicSyllabusEditor from '@/components/syllabus/dynamic-syllabus-editor';
+import { SyllabusExtractionPayload } from '@/types/syllabus';
+
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -612,6 +616,66 @@ export default function SyllabusVerificationPage() {
   const [history, setHistory] = useState<FullSyllabusData[]>([emptySyllabusData]);
   const [activeTab, setActiveTab] = useState<'general' | 'units' | 'topics' | 'cos' | 'copo' | 'references' | 'json'>('general');
   const [currentJobId, setCurrentJobId] = useState<string | undefined>(undefined);
+  const [useDynamicEditor, setUseDynamicEditor] = useState<boolean>(false);
+
+  const dynamicPayload: SyllabusExtractionPayload = useMemo(() => {
+    return {
+      course_info: {
+        code: syllabus.course.code || 'CS101',
+        title: syllabus.course.title || 'Course Title',
+        department: syllabus.course.department || 'Computer Science',
+        semester: syllabus.course.semester || 'Semester I',
+        credits: Number(syllabus.course.credits) || 4,
+        lecture_hours: Number(syllabus.course.lectureHours) || 3,
+        tutorial_hours: Number(syllabus.course.tutorialHours) || 1,
+        practical_hours: Number(syllabus.course.practicalHours) || 0,
+      },
+      units: (syllabus.units || []).map((u, uIdx) => ({
+        unit_number: uIdx + 1,
+        title: u.title,
+        hours: Number(u.learningHours) || 8,
+        topics: (u.topics || []).map((t) => ({
+          title: t.title,
+          difficulty: t.difficulty,
+          bloom_level: t.bloomLevel,
+          dependency: 'None',
+          prerequisite: 'Basic Concepts',
+          subtopics: (t.subtopics || []).map((st: any) => (typeof st === 'string' ? st : st.title)),
+        })),
+      })),
+      course_outcomes: (syllabus.outcomes || []).map((co: any, cIdx) => ({
+        code: `CO${cIdx + 1}`,
+        description: typeof co === 'string' ? co : (co?.statement || co?.description || `Outcome ${cIdx + 1}`),
+        bloom_level: typeof co === 'object' && co?.bloomLevel ? co.bloomLevel : 'Apply',
+      })),
+      co_po_pso_matrix: [],
+      textbooks: (syllabus.textbooks || []).map((tb: any) => ({
+        title: typeof tb === 'string' ? tb : (tb?.title || tb?.name || ''),
+        authors: typeof tb === 'object' ? (tb?.authors || '') : '',
+        publisher: typeof tb === 'object' ? (tb?.publisher || '') : '',
+        year: typeof tb === 'object' ? (tb?.year || '') : '',
+        book_type: 'textbook',
+      })),
+      reference_books: (syllabus.referenceBooks || []).map((rb: any) => ({
+        title: typeof rb === 'string' ? rb : (rb?.title || rb?.name || ''),
+        authors: typeof rb === 'object' ? (rb?.authors || '') : '',
+        publisher: typeof rb === 'object' ? (rb?.publisher || '') : '',
+        year: typeof rb === 'object' ? (rb?.year || '') : '',
+        book_type: 'reference',
+      })),
+
+    };
+  }, [syllabus]);
+
+  const handleSaveDynamicEditor = async (data: SyllabusExtractionPayload) => {
+    try {
+      await saveVerifiedCourseApi(data);
+      toast.success('Course verified & saved directly to DB!');
+    } catch (err: any) {
+      toast.error(`Save failed: ${err?.message || 'Error saving course'}`);
+    }
+  };
+
 
   // --------------------------------------------------------------------------
   // REAL-TIME EXTRACTION PIPELINE ORCHESTRATOR (BACKEND ONLY)
@@ -652,33 +716,39 @@ export default function SyllabusVerificationPage() {
 
     const runExtraction = async () => {
       try {
-        updateStepProgress(1, 15, 'Validating Course Code...');
+        updateStepProgress(1, 10, 'UPLOADING');
 
-        // Start gradual timer advancing step 1 -> step 2 -> step 3 -> step 4 (capped at 95%)
-        let targetProgress = 15;
+        // Start gradual timer advancing step 1 -> 2 -> 3 -> 4 -> 5 -> 6 (capped at 98%)
+        let targetProgress = 10;
         stepInterval = setInterval(() => {
           if (isCancelled) return;
           targetProgress += 2;
-          if (targetProgress > 95) targetProgress = 95;
+          if (targetProgress > 98) targetProgress = 98;
 
           let step = 1;
-          let statusText = 'Validating Course Code...';
-          if (targetProgress < 25) {
+          let statusCode = 'UPLOADING';
+          if (targetProgress < 20) {
             step = 1;
-            statusText = 'Validating Course Code...';
-          } else if (targetProgress < 50) {
+            statusCode = 'UPLOADING';
+          } else if (targetProgress < 40) {
             step = 2;
-            statusText = 'Reading & Uploading File...';
-          } else if (targetProgress < 75) {
+            statusCode = 'READING_PDF';
+          } else if (targetProgress < 60) {
             step = 3;
-            statusText = 'Extracting Full Syllabus via GPT-4o...';
-          } else {
+            statusCode = 'GPT_ANALYSIS';
+          } else if (targetProgress < 75) {
             step = 4;
-            statusText = 'Structuring Units, Topics & Metadata...';
+            statusCode = 'PARSING_DATA';
+          } else if (targetProgress < 90) {
+            step = 5;
+            statusCode = 'BUILDING_JSON';
+          } else {
+            step = 6;
+            statusCode = 'VALIDATION';
           }
 
-          updateStepProgress(step, Math.round(targetProgress), statusText);
-        }, 400);
+          updateStepProgress(step, Math.round(targetProgress), statusCode);
+        }, 350);
 
         const parseResult = await uploadAndExtractSyllabusBackend(
           file,
@@ -687,8 +757,8 @@ export default function SyllabusVerificationPage() {
             if (isCancelled) return;
             if (percentage && percentage > targetProgress) {
               targetProgress = percentage;
-              const step = Math.min(4, Math.max(1, stageIndex || Math.ceil((percentage / 100) * 4)));
-              updateStepProgress(step, Math.round(targetProgress), message || 'Extracting Syllabus...');
+              const step = Math.min(6, Math.max(1, stageIndex || Math.ceil((percentage / 100) * 6)));
+              updateStepProgress(step, Math.round(targetProgress), message || 'READING_PDF');
             }
           }
         );
@@ -699,14 +769,18 @@ export default function SyllabusVerificationPage() {
           throw new Error('Failed to receive structured syllabus from backend server.');
         }
 
-        // Ensure steps 1 through 4 complete smoothly if backend returned fast
-        if (currentStep < 4) {
-          updateStepProgress(2, 45, 'Reading & Uploading File...');
+        // Ensure steps 1 through 6 complete smoothly if backend returned fast
+        if (currentStep < 6) {
+          updateStepProgress(2, 35, 'READING_PDF');
+          await new Promise((r) => setTimeout(r, 150));
+          updateStepProgress(3, 55, 'GPT_ANALYSIS');
+          await new Promise((r) => setTimeout(r, 150));
+          updateStepProgress(4, 70, 'PARSING_DATA');
+          await new Promise((r) => setTimeout(r, 150));
+          updateStepProgress(5, 85, 'BUILDING_JSON');
+          await new Promise((r) => setTimeout(r, 150));
+          updateStepProgress(6, 95, 'VALIDATION');
           await new Promise((r) => setTimeout(r, 200));
-          updateStepProgress(3, 70, 'Extracting Full Syllabus via GPT-4o...');
-          await new Promise((r) => setTimeout(r, 200));
-          updateStepProgress(4, 95, 'Structuring Units, Topics & Metadata...');
-          await new Promise((r) => setTimeout(r, 250));
         }
 
         const extractedSyllabus = parseResult.syllabus;
@@ -728,19 +802,19 @@ export default function SyllabusVerificationPage() {
           // 2. Pause briefly to allow DOM to populate extracted content blocks
           await new Promise((r) => setTimeout(r, 300));
 
-          // 3. Show Step 5 and 100% Done
+          // 3. Show Step 7 and 100% Done (COMPLETED)
           setExtractionProgress({
             isExtracting: true,
-            step: 5,
+            step: 7,
             progress: 100,
-            statusText: 'Extraction Complete! Content rendered for review.',
+            statusText: 'COMPLETED',
           });
 
-          // 4. Keep Step 5 and 100% visible on screen for 2.5s before dismissing
+          // 4. Keep Step 7 and 100% visible on screen before dismissing
           setTimeout(() => {
             setExtractionProgress({ isExtracting: false, step: 0, progress: 0, statusText: '', error: null });
             isExecutingRef.current = false;
-          }, 2500);
+          }, 3000);
         }
 
         toast.success(`Successfully extracted syllabus document!`);
@@ -1537,8 +1611,22 @@ export default function SyllabusVerificationPage() {
               </button>
             </div>
 
+            {/* Dynamic Cards Editor Mode Toggle */}
+            <button
+              onClick={() => setUseDynamicEditor(!useDynamicEditor)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 ${
+                useDynamicEditor
+                  ? 'bg-indigo-600/20 text-indigo-400 border-indigo-500/40 shadow-lg shadow-indigo-500/10'
+                  : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+              }`}
+            >
+              <Sparkles size={14} className={useDynamicEditor ? 'text-indigo-400' : 'text-slate-400'} />
+              <span>{useDynamicEditor ? 'Dynamic Cards Active' : 'Switch to Dynamic Cards Editor'}</span>
+            </button>
+
             {/* Auto Save Status Indicator */}
             <div className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-3 py-1.5 text-xs font-mono">
+
               {autoSaveState === 'saving' && (
                 <span className="flex items-center gap-1.5 text-cyan-600 dark:text-cyan-400">
                   <RefreshCw size={13} className="animate-spin" /> Saving...
@@ -1664,81 +1752,18 @@ export default function SyllabusVerificationPage() {
           </motion.div>
         )}
 
-        {/* Dynamic Real-Time 5-Step Extraction Progress Bar */}
+        {/* Dynamic Real-Time 7-Step Phase 1 Extraction Progress Bar with Live Logs */}
         {extractionState.isExtracting && (
-          <motion.div
-            initial={{ opacity: 0, y: -12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            className="mb-8 rounded-3xl border border-cyan-500/40 bg-slate-950/90 p-6 sm:p-8 backdrop-blur-2xl shadow-[0_0_50px_rgba(6,182,212,0.2)] text-white space-y-6 overflow-hidden relative"
-          >
-            {/* Ambient Lighting Accents */}
-            <div className="absolute -top-24 -right-24 w-72 h-72 bg-cyan-500/15 rounded-full blur-3xl pointer-events-none animate-pulse" />
-            <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none animate-pulse" />
-
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 relative z-10">
-              <div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-3.5 py-1 text-xs font-mono font-bold text-cyan-300">
-                  <Sparkles className="w-3.5 h-3.5 animate-spin" /> GPT-4o Extraction Pipeline &bull; Step {extractionState.step} of 5
-                </div>
-                <h2 className="mt-3 text-2xl font-extrabold tracking-tight text-white flex items-center gap-2">
-                  {extractionState.statusText || 'Processing Document...'}
-                </h2>
-              </div>
-              <div className="text-left sm:text-right font-mono">
-                <span className="text-3xl font-extrabold text-cyan-400">{Math.min(100, Math.max(0, extractionState.progress))}%</span>
-                <p className="text-xs text-slate-400 mt-0.5">Real-time Progress Indicator</p>
-              </div>
-            </div>
-
-            {/* Dynamic Progress Bar Track */}
-            <div className="relative w-full h-3.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800 p-0.5">
-              <motion.div
-                className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-indigo-500 to-emerald-400 shadow-[0_0_20px_rgba(6,182,212,0.7)]"
-                initial={{ width: '0%' }}
-                animate={{ width: `${Math.min(100, Math.max(0, extractionState.progress))}%` }}
-                transition={{ duration: 0.5, ease: 'easeOut' }}
-              />
-            </div>
-
-            {/* 5-Step Status Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 pt-1 relative z-10">
-              {[
-                { step: 1, label: 'Validating Course Code...' },
-                { step: 2, label: 'Reading & Uploading File...' },
-                { step: 3, label: 'Extracting Full Syllabus via GPT-4o...' },
-                { step: 4, label: 'Structuring Units, Topics & Metadata...' },
-                { step: 5, label: 'Rendering Extracted Content for Review...' }
-              ].map((item) => {
-                const isDone = extractionState.step > item.step || (item.step === 5 && extractionState.step === 5 && extractionState.progress === 100);
-                const isCurrent = extractionState.step === item.step && !isDone;
-                return (
-                  <div
-                    key={item.step}
-                    className={`rounded-2xl border p-3 transition-all flex flex-col justify-between gap-2 ${
-                      isDone
-                        ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-300'
-                        : isCurrent
-                        ? 'border-cyan-400 bg-cyan-950/50 text-cyan-200 ring-2 ring-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.25)]'
-                        : 'border-slate-800 bg-slate-900/60 text-slate-500'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between font-mono text-[11px] font-bold">
-                      <span>STEP 0{item.step}</span>
-                      {isDone ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      ) : isCurrent ? (
-                        <Loader2 className="w-4 h-4 text-cyan-400 animate-spin shrink-0" />
-                      ) : (
-                        <span className="w-2 h-2 rounded-full bg-slate-700 shrink-0" />
-                      )}
-                    </div>
-                    <p className="text-xs font-semibold leading-tight">{item.label}</p>
-                  </div>
-                );
-              })}
-            </div>
-          </motion.div>
+          <div className="mb-8">
+            <Phase1ExtractionProgress
+              fileName={pendingExtraction?.file?.name || (syllabus.course?.code ? `${syllabus.course.code}.pdf` : 'BE3251.pdf')}
+              currentStep={extractionState.step || 1}
+              progress={extractionState.progress || 0}
+              statusText={extractionState.statusText}
+              statusCode={extractionState.statusText}
+              error={extractionState.error}
+            />
+          </div>
         )}
 
         {/* Course Code Mismatch Alert Banner */}
@@ -1794,10 +1819,14 @@ export default function SyllabusVerificationPage() {
           </motion.div>
         )}
 
-        {/* ================================================================== */}
-        {/* MAIN 2-COLUMN RESPONSIVE SPLIT PANE LAYOUT */}
-        {/* ================================================================== */}
-        <div className="flex flex-col lg:flex-row gap-6 items-start lg:h-[calc(100vh-140px)] min-h-0">
+        {useDynamicEditor ? (
+          <DynamicSyllabusEditor
+            initialSyllabus={dynamicPayload}
+            onSave={handleSaveDynamicEditor}
+          />
+        ) : (
+          <div className="flex flex-col lg:flex-row gap-6 items-start lg:h-[calc(100vh-140px)] min-h-0">
+
           
           {/* ---------------------------------------------------------------- */}
           {/* LEFT SIDEBAR (STICKY NAVIGATION & STATS PANEL) */}
@@ -3890,6 +3919,8 @@ export default function SyllabusVerificationPage() {
 
           </main>
         </div>
+        )}
+
 
         {/* ================================================================== */}
         {/* BOTTOM FLOATING SAVE BAR (WHEN DISDIRTY / EDITED) */}

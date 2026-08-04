@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
-import Link from 'link';
+import Link from 'next/link';
 import { AppShell } from '@/components/layout/app-shell';
 import { useTheme } from '@/components/providers/theme-provider';
+import { VoiceAssistantBar } from '@/components/voice/voice-assistant-bar';
 import { 
   HelpCircle, 
   Send, 
@@ -25,6 +26,26 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 
 const RAG_API_BASE_URL = process.env.NEXT_PUBLIC_RAG_API_URL || "http://127.0.0.1:8000";
+
+const STOP_COMMANDS = [
+  "stop",
+  "stop it",
+  "okay stop it",
+  "ok stop it",
+  "pause",
+  "quiet",
+  "shut up",
+  "stop listening",
+  "cancel",
+  "exit voice",
+  "turn off",
+  "stop assistant"
+];
+
+const checkIsStopCommand = (text: string): boolean => {
+  const normalized = text.toLowerCase().trim().replace(/[^a-z0-9\s]/g, '');
+  return STOP_COMMANDS.some(cmd => normalized === cmd || normalized.endsWith(cmd) || normalized.includes(cmd));
+};
 
 interface Section {
   title: string;
@@ -78,17 +99,11 @@ export default function DoubtsPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isQuerying, setIsQuerying] = useState(false);
 
-  // Per-Section TTS Audio Playback State
+  // Per-Section & Per-Message TTS Playback State
   const [activeAudioKey, setActiveAudioKey] = useState<string | null>(null);
+  const [activeSpeakingMsgId, setActiveSpeakingMsgId] = useState<string | null>(null);
   const [isAudioLoading, setIsAudioLoading] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  // Audio Capture / Mic Recorder State
-  const [isRecording, setIsRecording] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [voiceTranscript, setVoiceTranscript] = useState<string>('');
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
 
   // Document Ingestion State
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -98,6 +113,35 @@ export default function DoubtsPage() {
 
   // Token Records State
   const [tokenRecords, setTokenRecords] = useState<TokenRecord[]>([]);
+
+  // Continuous Voice AI Assistant & VAD State (Hands-Free ON by default)
+  const [isVADListening, setIsVADListening] = useState(false);
+  const [isSpeechActive, setIsSpeechActive] = useState(false);
+  const [handsFreeMode, setHandsFreeMode] = useState(true); // Default mode: Hands-Free ON
+  const [vadTranscript, setVadTranscript] = useState('');
+  const [isAISpeaking, setIsAISpeaking] = useState(false);
+  const [spokenCaption, setSpokenCaption] = useState('');
+  const [highlightedWordIndex, setHighlightedWordIndex] = useState(0);
+  const [micError, setMicError] = useState<string | null>(null);
+
+  const recognitionRef = useRef<any>(null);
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const handsFreeModeRef = useRef(handsFreeMode);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    handsFreeModeRef.current = handsFreeMode;
+  }, [handsFreeMode]);
+
+  // Auto-scroll to bottom of chat display
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isQuerying, vadTranscript, isAISpeaking]);
 
   // Health check endpoint verification
   const checkBackendHealth = async () => {
@@ -114,7 +158,7 @@ export default function DoubtsPage() {
     checkBackendHealth();
   }, [customApiUrl]);
 
-  // Clean Markdown utility (mirroring backend TTS preparation logic)
+  // Clean Markdown utility
   const cleanMarkdownForTts = (text: string): string => {
     return text
       .replace(/```[\s\S]*?```/g, '')
@@ -148,9 +192,227 @@ export default function DoubtsPage() {
     return highlightedText;
   };
 
-  // ---------------------------------------------------------------------------
+  // Stop SpeechSynthesis TTS
+  const stopTTS = () => {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    setIsAISpeaking(false);
+    setActiveSpeakingMsgId(null);
+    setSpokenCaption('');
+    setHighlightedWordIndex(0);
+    utteranceRef.current = null;
+  };
+
+  // Stop VAD Listening
+  const stopVADListening = () => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch {}
+      recognitionRef.current = null;
+    }
+    setIsVADListening(false);
+    setIsSpeechActive(false);
+  };
+
+  // Stop Voice Assistant completely (Command Interceptor)
+  const stopVoiceAssistant = (message?: string) => {
+    stopVADListening();
+    setHandsFreeMode(false);
+    stopTTS();
+    setQueryInput('');
+    setVadTranscript('');
+    if (message) {
+      speakAIResponse(message);
+    }
+  };
+
+  // Clean up Audio and Voice Assistant on Unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      stopVADListening();
+      stopTTS();
+    };
+  }, []);
+
+  // Start VAD Listening
+  const startVADListening = () => {
+    if (typeof window === 'undefined') return;
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setMicError("Web Speech API is not supported in this browser. Please use Chrome or Edge.");
+      return;
+    }
+
+    stopVADListening();
+    stopTTS();
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsVADListening(true);
+        setMicError(null);
+        setVadTranscript('');
+      };
+
+      recognition.onspeechstart = () => {
+        setIsSpeechActive(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        let interimText = '';
+        let finalText = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalText += event.results[i][0].transcript;
+          } else {
+            interimText += event.results[i][0].transcript;
+          }
+        }
+
+        const currentText = (finalText || interimText).trim();
+        if (currentText) {
+          // INTERCEPT CONTROL COMMANDS (e.g. "stop", "stop it", "okay stop it")
+          if (checkIsStopCommand(currentText)) {
+            stopVoiceAssistant("Voice Assistant paused. Hands-free loop disabled.");
+            return;
+          }
+
+          setVadTranscript(currentText);
+          setQueryInput(currentText);
+
+          // Reset VAD silence timer: when speech pauses for 1200ms -> auto-submit!
+          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+
+          silenceTimerRef.current = setTimeout(() => {
+            if (currentText) {
+              if (checkIsStopCommand(currentText)) {
+                stopVoiceAssistant("Voice Assistant paused. Hands-free loop disabled.");
+                return;
+              }
+              stopVADListening();
+              handleQuerySubmit(currentText);
+            }
+          }, 1200);
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn("[VAD Error]", event.error);
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          setMicError("Microphone access blocked. Please grant microphone permissions in your browser.");
+        } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
+          setMicError(`Speech Recognition error: ${event.error}`);
+        }
+        setIsVADListening(false);
+        setIsSpeechActive(false);
+      };
+
+      recognition.onend = () => {
+        setIsVADListening(false);
+        setIsSpeechActive(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err: any) {
+      console.error("[VAD Init Exception]", err);
+      setMicError("Could not initialize microphone speech recognition.");
+    }
+  };
+
+  // Speak AI Response via SpeechSynthesis with Live Captioning, Message Highlighting & Word Highlighting
+  const speakAIResponse = (fullText: string, messageId?: string) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+
+    stopTTS();
+    if (!fullText || !fullText.trim()) return;
+
+    const cleanText = fullText.replace(/[*_#`~]/g, '').trim();
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utteranceRef.current = utterance;
+
+    const voices = window.speechSynthesis.getVoices();
+    const naturalVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Daniel'))) || voices.find(v => v.lang.startsWith('en'));
+    if (naturalVoice) utterance.voice = naturalVoice;
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    utterance.onstart = () => {
+      setIsAISpeaking(true);
+      if (messageId) setActiveSpeakingMsgId(messageId);
+      setSpokenCaption(cleanText);
+      setHighlightedWordIndex(0);
+    };
+
+    utterance.onboundary = (event: any) => {
+      if (event.name === 'word') {
+        const textUpToBoundary = cleanText.substring(0, event.charIndex);
+        const wordsSoFar = textUpToBoundary.trim().split(/\s+/).filter(Boolean).length;
+        setHighlightedWordIndex(wordsSoFar);
+      }
+    };
+
+    utterance.onend = () => {
+      setIsAISpeaking(false);
+      setActiveSpeakingMsgId(null);
+      setSpokenCaption('');
+      setHighlightedWordIndex(0);
+      utteranceRef.current = null;
+
+      // CONTINUOUS BACK-AND-FORTH LOOP: Re-start VAD listening for user's next spoken query!
+      if (handsFreeModeRef.current) {
+        setTimeout(() => {
+          startVADListening();
+        }, 700);
+      }
+    };
+
+    utterance.onerror = (e) => {
+      console.error("[TTS Error]", e);
+      setIsAISpeaking(false);
+      setActiveSpeakingMsgId(null);
+      setSpokenCaption('');
+      utteranceRef.current = null;
+    };
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // Toggle TTS for a specific assistant ChatMessage
+  const handleToggleMessageTTS = (msg: ChatMessage) => {
+    if (activeSpeakingMsgId === msg.id) {
+      stopTTS();
+      return;
+    }
+
+    let fullText = msg.content || '';
+    if (msg.sections && msg.sections.length > 0) {
+      fullText = msg.sections.map(s => s.voice_explanation || s.visual_markdown).join('. ');
+    }
+
+    if (fullText) {
+      speakAIResponse(fullText, msg.id);
+    }
+  };
+
   // Audio Playback Handler (/chat/synthesize)
-  // ---------------------------------------------------------------------------
   const handleListenSection = async (voiceText: string, componentKey: string) => {
     if (activeAudioKey === componentKey && audioRef.current) {
       if (!audioRef.current.paused) {
@@ -195,72 +457,18 @@ export default function DoubtsPage() {
     }
   };
 
-  // ---------------------------------------------------------------------------
-  // Microphone Capture & Audio Transcription Handler (/chat/transcribe)
-  // ---------------------------------------------------------------------------
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        await transcribeAudio(audioBlob);
-        stream.getTracks().forEach(track => track.stop());
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-    } catch (err) {
-      alert("Microphone access denied or audio recording is not supported in this environment.");
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
-  };
-
-  const transcribeAudio = async (audioBlob: Blob) => {
-    setIsTranscribing(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", audioBlob, "audio.wav");
-
-      const res = await fetch(`${customApiUrl}/chat/transcribe`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setVoiceTranscript(data.transcript || "");
-      } else {
-        alert("Audio transaction failed at backend level.");
-      }
-    } catch (err: any) {
-      alert(`Could not interact with speech endpoint: ${err.message || err}`);
-    } finally {
-      setIsTranscribing(false);
-    }
-  };
-
-  // ---------------------------------------------------------------------------
   // Primary Chat Execution Handler (/chat/)
-  // ---------------------------------------------------------------------------
   const handleQuerySubmit = async (overridePrompt?: string) => {
     const promptToSend = overridePrompt || queryInput;
     if (!promptToSend.trim() || isQuerying) return;
+
+    if (checkIsStopCommand(promptToSend)) {
+      stopVoiceAssistant("Voice Assistant paused. Hands-free loop disabled.");
+      return;
+    }
+
+    stopVADListening();
+    stopTTS();
 
     const userMsg: ChatMessage = {
       id: `usr_${Date.now()}`,
@@ -271,7 +479,7 @@ export default function DoubtsPage() {
 
     setMessages(prev => [...prev, userMsg]);
     if (!overridePrompt) setQueryInput('');
-    setVoiceTranscript('');
+    setVadTranscript('');
     setIsQuerying(true);
 
     try {
@@ -281,25 +489,38 @@ export default function DoubtsPage() {
         body: JSON.stringify({ message: promptToSend })
       });
 
-      if (!res.ok) {
+      let sections: Section[] = [];
+      let sources: Source[] = [];
+
+      if (res.ok) {
+        const data = await res.json();
+        sections = data.response_sections || data.sections || [];
+        sources = data.sources || [];
+      } else {
         throw new Error(`Backend API returned an error status: ${res.status}`);
       }
 
-      const data = await res.json();
-
+      const assistantMsgId = `ast_${Date.now()}`;
       const assistantMsg: ChatMessage = {
-        id: `ast_${Date.now()}`,
+        id: assistantMsgId,
         role: 'assistant',
-        sections: data.response_sections || [],
-        sources: data.sources || [],
+        sections: sections,
+        sources: sources,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
 
       setMessages(prev => [...prev, assistantMsg]);
-      recordTokenUsage('/chat/', 'gpt-4o', 350, 280);
+      recordTokenUsage('/chat/', 'gpt-4o-mini', 350, 280);
+
+      // AUTOMATIC TEXT-TO-SPEECH (TTS) & CONTENT HIGHLIGHTING FOR RETURNED AI RESPONSE
+      const spokenSummary = sections.map(s => s.voice_explanation || s.visual_markdown).join('. ');
+      if (spokenSummary) {
+        speakAIResponse(spokenSummary, assistantMsgId);
+      }
     } catch (err: any) {
+      const assistantMsgId = `ast_err_${Date.now()}`;
       const errorMsg: ChatMessage = {
-        id: `ast_err_${Date.now()}`,
+        id: assistantMsgId,
         role: 'assistant',
         sections: [
           {
@@ -317,9 +538,7 @@ export default function DoubtsPage() {
     }
   };
 
-  // ---------------------------------------------------------------------------
   // Ingestion Handler (/document/upload)
-  // ---------------------------------------------------------------------------
   const handleFileUpload = async () => {
     if (!uploadFile || isUploading) return;
     setIsUploading(true);
@@ -425,9 +644,10 @@ export default function DoubtsPage() {
               <button
                 onClick={() => {
                   setMessages([]);
-                  setVoiceTranscript('');
+                  setVadTranscript('');
+                  stopTTS();
                 }}
-                className="px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs font-mono font-bold hover:bg-rose-500/20"
+                className="px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs font-mono font-bold hover:bg-rose-500/20 transition-all"
               >
                 🗑️ Clear Chat View
               </button>
@@ -468,176 +688,197 @@ export default function DoubtsPage() {
             })}
           </div>
 
-          {/* TAB 1: Chat Workspace */}
+          {/* TAB 1: Chat Workspace (Vertical Page Layout: Top -> Middle -> Bottom) */}
           {activeTab === 'chat' && (
             <div className="space-y-6">
-              <h3 className="text-lg font-bold text-[var(--text-primary)]">Interactive Query Interface</h3>
+              {/* 1. TOP: Interactive Query Interface (Chat Log History Display) */}
+              <div>
+                <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3">Interactive Query Interface</h3>
 
-              {/* Chat Log History */}
-              <div className="min-h-[350px] max-h-[600px] overflow-y-auto space-y-4 p-4 rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)]">
-                {messages.length === 0 ? (
-                  <div className="p-12 text-center text-[var(--text-muted)]">
-                    <BrainCircuit size={48} className="mx-auto text-amber-500/50 mb-3" />
-                    <h3 className="text-base font-bold text-[var(--text-primary)]">Workspace Idle</h3>
-                    <p className="text-xs mt-1 max-w-md mx-auto">
-                      Ask a query based on ingested vector context or submit a voice prompt using the microphone panel below.
-                    </p>
-                  </div>
-                ) : (
-                  messages.map((msg, msgIdx) => (
-                    <div
-                      key={msg.id}
-                      className={`p-4 rounded-2xl border transition-all ${
-                        msg.role === 'user'
-                          ? 'bg-amber-500/10 border-amber-500/30 ml-8 text-[var(--text-primary)]'
-                          : 'bg-[var(--bg-subtle)] border-[var(--border-subtle)] mr-8 text-[var(--text-primary)]'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between text-xs text-[var(--text-muted)] mb-2 font-mono">
-                        <span className="font-bold uppercase text-amber-500">
-                          {msg.role === 'user' ? 'User Query' : 'Assistant Node Response'}
-                        </span>
-                        <span>{msg.timestamp}</span>
-                      </div>
-
-                      {msg.content && <p className="text-sm font-semibold">{msg.content}</p>}
-
-                      {msg.sections && (
-                        <div className="space-y-4 mt-3">
-                          {msg.sections.map((section, sIdx) => {
-                            const componentKey = `msg_${msgIdx}_sec_${sIdx}`;
-                            const isAudioActive = activeAudioKey === componentKey;
-                            const visualContent = section.visual_markdown || "";
-
-                            return (
-                              <div key={sIdx} className="p-4 rounded-xl bg-[var(--bg-card)] border border-[var(--border-subtle)] space-y-2">
-                                {section.title && (
-                                  <h3 className="font-bold text-sm text-[var(--text-primary)]">
-                                    {section.title}
-                                  </h3>
-                                )}
-
-                                {/* Highlighted Markdown Body Render */}
-                                {isAudioActive ? (
-                                  <div
-                                    className="text-xs text-[var(--text-secondary)] whitespace-pre-line leading-relaxed"
-                                    dangerouslySetInnerHTML={{
-                                      __html: highlightText(visualContent, section.highlights || [])
-                                    }}
-                                  />
-                                ) : (
-                                  <p className="text-xs text-[var(--text-secondary)] whitespace-pre-line leading-relaxed">
-                                    {visualContent}
-                                  </p>
-                                )}
-
-                                {/* Per-Section Voice Action Trigger Panel */}
-                                {section.voice_explanation && (
-                                  <div className="flex justify-end pt-2">
-                                    <button
-                                      onClick={() => handleListenSection(section.voice_explanation!, componentKey)}
-                                      disabled={isAudioLoading && activeAudioKey === componentKey}
-                                      className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
-                                        isAudioActive
-                                          ? 'bg-amber-500 text-black shadow-md'
-                                          : 'bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-amber-500'
-                                      }`}
-                                    >
-                                      {isAudioLoading && activeAudioKey === componentKey ? (
-                                        <Loader2 size={14} className="animate-spin" />
-                                      ) : (
-                                        <Volume2 size={14} />
-                                      )}
-                                      <span>{isAudioActive ? "Stop Section" : "🔊 Listen Section"}</span>
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {/* Contextual Data Footprint Tracing Layout */}
-                      {msg.sources && msg.sources.length > 0 && (
-                        <details className="mt-3 text-xs bg-[var(--bg-card)] p-3 rounded-xl border border-[var(--border-subtle)] cursor-pointer">
-                          <summary className="font-bold text-[var(--text-muted)] hover:text-amber-500">
-                            🔍 View Context Sources Used ({msg.sources.length})
-                          </summary>
-                          <div className="mt-2 space-y-2 pt-2 border-t border-[var(--border-subtle)]">
-                            {msg.sources.map((src, srcIdx) => (
-                              <div key={srcIdx} className="space-y-1">
-                                <span className="font-mono font-bold text-amber-500">Source {srcIdx + 1}: {src.source}</span>
-                                <p className="text-[var(--text-muted)] bg-[var(--bg-subtle)] p-2 rounded-lg italic">
-                                  "{src.content}"
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </details>
-                      )}
+                <div className="min-h-[350px] max-h-[550px] overflow-y-auto space-y-4 p-4 rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)] shadow-sm">
+                  {messages.length === 0 ? (
+                    <div className="p-12 text-center text-[var(--text-muted)]">
+                      <BrainCircuit size={48} className="mx-auto text-amber-500/50 mb-3" />
+                      <h3 className="text-base font-bold text-[var(--text-primary)]">Workspace Idle</h3>
+                      <p className="text-xs mt-1 max-w-md mx-auto">
+                        Ask a query based on ingested vector context or submit a voice prompt using the microphone icon inside the input bar or Voice Assistant below.
+                      </p>
                     </div>
-                  ))
-                )}
+                  ) : (
+                    messages.map((msg, msgIdx) => {
+                      const isMsgSpeaking = activeSpeakingMsgId === msg.id;
 
-                {isQuerying && (
-                  <div className="p-4 rounded-xl bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-xs text-amber-500 font-mono flex items-center gap-2 animate-pulse">
-                    <Loader2 size={16} className="animate-spin" />
-                    <span>Agentic pipeline executing graph workflow...</span>
-                  </div>
-                )}
+                      return (
+                        <div
+                          key={msg.id}
+                          className={`p-4 rounded-2xl border transition-all ${
+                            msg.role === 'user'
+                              ? 'bg-amber-500/10 border-amber-500/30 ml-8 text-[var(--text-primary)]'
+                              : isMsgSpeaking
+                              ? 'bg-amber-500/10 dark:bg-amber-500/15 border-amber-500/60 shadow-lg shadow-amber-500/10 mr-8 text-[var(--text-primary)] ring-2 ring-amber-500/30'
+                              : 'bg-[var(--bg-subtle)] border-[var(--border-subtle)] mr-8 text-[var(--text-primary)]'
+                          }`}
+                        >
+                          {/* Message Header & Dedicated Listen Icon Button */}
+                          <div className="flex items-center justify-between text-xs mb-2 font-mono">
+                            <span className="font-bold uppercase text-amber-500 flex items-center gap-1.5">
+                              {msg.role === 'user' ? 'User Query' : <BrainCircuit className="w-3.5 h-3.5" />}
+                              {msg.role === 'user' ? 'User Query' : 'Assistant Node Response'}
+                            </span>
+
+                            <div className="flex items-center gap-3">
+                              {msg.role === 'assistant' && (
+                                <button
+                                  onClick={() => handleToggleMessageTTS(msg)}
+                                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                                    isMsgSpeaking
+                                      ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30 animate-pulse'
+                                      : 'bg-[var(--bg-card)] border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-amber-500 hover:border-amber-500/40'
+                                  }`}
+                                  title={isMsgSpeaking ? "Pause / Stop Audio" : "Listen / Replay Response"}
+                                >
+                                  <Volume2 className={`w-3.5 h-3.5 ${isMsgSpeaking ? 'animate-bounce text-slate-950' : 'text-amber-500'}`} />
+                                  <span>{isMsgSpeaking ? "Pause" : "Listen"}</span>
+                                </button>
+                              )}
+                              <span className="text-[10px] text-[var(--text-muted)] font-mono">{msg.timestamp}</span>
+                            </div>
+                          </div>
+
+                          {msg.content && <p className="text-sm font-semibold">{msg.content}</p>}
+
+                          {msg.sections && (
+                            <div className="space-y-4 mt-3">
+                              {msg.sections.map((section, sIdx) => {
+                                const componentKey = `msg_${msgIdx}_sec_${sIdx}`;
+                                const isAudioActive = activeAudioKey === componentKey;
+                                const visualContent = section.visual_markdown || "";
+
+                                return (
+                                  <div 
+                                    key={sIdx} 
+                                    className={`p-4 rounded-xl border space-y-2 transition-all ${
+                                      isMsgSpeaking 
+                                        ? 'bg-amber-500/10 dark:bg-amber-500/20 border-amber-500/40 text-amber-950 dark:text-amber-100 font-medium'
+                                        : 'bg-[var(--bg-card)] border-[var(--border-subtle)]'
+                                    }`}
+                                  >
+                                    {section.title && (
+                                      <h3 className="font-bold text-sm text-[var(--text-primary)] flex items-center gap-2">
+                                        <BookOpen className="w-4 h-4 text-amber-500" />
+                                        {section.title}
+                                      </h3>
+                                    )}
+
+                                    {/* Highlighted Markdown Body Render */}
+                                    {isAudioActive ? (
+                                      <div
+                                        className="text-xs text-[var(--text-secondary)] whitespace-pre-line leading-relaxed"
+                                        dangerouslySetInnerHTML={{
+                                          __html: highlightText(visualContent, section.highlights || [])
+                                        }}
+                                      />
+                                    ) : (
+                                      <p className={`text-xs whitespace-pre-line leading-relaxed ${
+                                        isMsgSpeaking ? 'text-amber-950 dark:text-amber-100 font-semibold' : 'text-[var(--text-secondary)]'
+                                      }`}>
+                                        {visualContent}
+                                      </p>
+                                    )}
+
+                                    {/* Per-Section Voice Action Trigger Panel */}
+                                    {section.voice_explanation && (
+                                      <div className="flex justify-end pt-2">
+                                        <button
+                                          onClick={() => handleListenSection(section.voice_explanation!, componentKey)}
+                                          disabled={isAudioLoading && activeAudioKey === componentKey}
+                                          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+                                            isAudioActive
+                                              ? 'bg-amber-500 text-black shadow-md'
+                                              : 'bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-amber-500'
+                                          }`}
+                                        >
+                                          {isAudioLoading && activeAudioKey === componentKey ? (
+                                            <Loader2 size={14} className="animate-spin" />
+                                          ) : (
+                                            <Volume2 size={14} />
+                                          )}
+                                          <span>{isAudioActive ? "Stop Section" : "🔊 Listen Section"}</span>
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Contextual Data Footprint Tracing Layout */}
+                          {msg.sources && msg.sources.length > 0 && (
+                            <details className="mt-3 text-xs bg-[var(--bg-card)] p-3 rounded-xl border border-[var(--border-subtle)] cursor-pointer">
+                              <summary className="font-bold text-[var(--text-muted)] hover:text-amber-500">
+                                🔍 View Context Sources Used ({msg.sources.length})
+                              </summary>
+                              <div className="mt-2 space-y-2 pt-2 border-t border-[var(--border-subtle)]">
+                                {msg.sources.map((src, srcIdx) => (
+                                  <div key={srcIdx} className="space-y-1">
+                                    <span className="font-mono font-bold text-amber-500">Source {srcIdx + 1}: {src.source}</span>
+                                    <p className="text-[var(--text-muted)] bg-[var(--bg-subtle)] p-2 rounded-lg italic">
+                                      "{src.content}"
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </details>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+
+                  {isQuerying && (
+                    <div className="p-4 rounded-xl bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-xs text-amber-500 font-mono flex items-center gap-2 animate-pulse">
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>Agentic pipeline executing graph workflow...</span>
+                    </div>
+                  )}
+
+                  {/* Auto-scroll anchor */}
+                  <div ref={messagesEndRef} />
+                </div>
               </div>
 
-              {/* Voice Utility Sub-Panel (Audio Capture Placement) */}
-              <div className="p-4 rounded-xl bg-[var(--bg-card)] border border-[var(--border-subtle)] space-y-3">
-                <p className="text-xs font-bold text-[var(--text-primary)]">🎙️ Voice Assistant Options</p>
-                <div className="flex flex-col sm:flex-row items-center gap-4">
+              {/* 2. MIDDLE: Primary Chat Input Bar with Embedded Microphone & Submit Button */}
+              <div className="relative flex items-center gap-2">
+                <div className="relative flex-1 flex items-center">
+                  <input
+                    type="text"
+                    placeholder={
+                      isVADListening
+                        ? 'Listening live... speak now (Say "Stop" anytime)'
+                        : 'Ask anything based on your loaded documents...'
+                    }
+                    value={queryInput}
+                    onChange={(e) => setQueryInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleQuerySubmit()}
+                    disabled={isQuerying}
+                    className="w-full bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl pl-4 pr-12 py-3 text-sm text-[var(--text-primary)] focus:outline-none focus:border-amber-500 shadow-sm"
+                  />
+                  {/* Integrated Microphone Icon Button inside input bar */}
                   <button
-                    onClick={isRecording ? stopRecording : startRecording}
-                    className={`w-full sm:w-auto px-4 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
-                      isRecording
-                        ? 'bg-rose-500 text-white animate-pulse'
-                        : 'bg-[var(--bg-subtle)] border border-[var(--border-subtle)] hover:bg-[var(--bg-hover)] text-[var(--text-primary)]'
+                    type="button"
+                    onClick={isVADListening ? () => stopVoiceAssistant("Voice assistant paused.") : startVADListening}
+                    className={`absolute right-3 p-2 rounded-lg transition-all ${
+                      isVADListening
+                        ? 'bg-rose-500/20 text-rose-500 animate-pulse'
+                        : 'text-amber-500 hover:bg-[var(--bg-subtle)]'
                     }`}
+                    title={isVADListening ? 'Stop Listening' : 'Start Continuous Voice Input (VAD)'}
                   >
-                    {isRecording ? <MicOff size={16} /> : <Mic size={16} />}
-                    <span>{isRecording ? "Stop Recording" : "Click to Speak"}</span>
+                    {isVADListening ? <MicOff size={18} /> : <Mic size={18} />}
                   </button>
-
-                  {isTranscribing && (
-                    <div className="flex items-center gap-2 text-xs font-mono text-amber-500 animate-pulse">
-                      <Loader2 size={14} className="animate-spin" />
-                      <span>Transcribing speech with Deepgram Nova-2...</span>
-                    </div>
-                  )}
-
-                  {voiceTranscript && (
-                    <div className="flex-1 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-500">
-                      📝 <strong>Captured Speech:</strong> <em>"{voiceTranscript}"</em>
-                    </div>
-                  )}
                 </div>
 
-                {voiceTranscript && (
-                  <button
-                    onClick={() => handleQuerySubmit(voiceTranscript)}
-                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 font-bold text-black text-xs shadow-md"
-                  >
-                    🚀 Send Captured Voice Message
-                  </button>
-                )}
-              </div>
-
-              {/* Chat Input Input Box */}
-              <div className="relative flex items-center gap-2">
-                <input
-                  type="text"
-                  placeholder="Ask anything based on your loaded documents..."
-                  value={queryInput}
-                  onChange={(e) => setQueryInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleQuerySubmit()}
-                  className="flex-1 bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] focus:outline-none focus:border-amber-500 shadow-sm"
-                />
                 <button
                   onClick={() => handleQuerySubmit()}
                   disabled={isQuerying || !queryInput.trim()}
@@ -646,6 +887,23 @@ export default function DoubtsPage() {
                   <Send size={16} /> Query
                 </button>
               </div>
+
+              {/* 3. BOTTOM: Continuous Voice AI Assistant Panel (Hands-Free ON by default) */}
+              <VoiceAssistantBar
+                isVADListening={isVADListening}
+                isSpeechActive={isSpeechActive}
+                isAISpeaking={isAISpeaking}
+                isQuerying={isQuerying}
+                handsFreeMode={handsFreeMode}
+                vadTranscript={vadTranscript}
+                spokenCaption={spokenCaption}
+                highlightedWordIndex={highlightedWordIndex}
+                micError={micError}
+                onToggleVAD={() => isVADListening ? stopVoiceAssistant("Voice assistant paused.") : startVADListening()}
+                onToggleHandsFree={() => setHandsFreeMode(!handsFreeMode)}
+                onStopTTS={stopTTS}
+                onClearError={() => setMicError(null)}
+              />
             </div>
           )}
 
