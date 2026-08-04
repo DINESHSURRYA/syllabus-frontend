@@ -48,10 +48,7 @@ const ExperimentMapperTab = dynamic(
   }
 );
 
-const TeachingStrategiesModal = dynamic(
-  () => import('@/components/curriculum/TeachingStrategiesModal').then((mod) => mod.TeachingStrategiesModal),
-  { ssr: false }
-);
+import { TeachingStrategiesModal } from '@/components/curriculum/TeachingStrategiesModal';
 
 const ALL_UNITS_LIST = ['Unit 1', 'Unit 2', 'Unit 3', 'Unit 4', 'Unit 5'];
 
@@ -962,11 +959,29 @@ export default function CurriculumPage() {
                                 "System Integration"
                               ];
 
-                              const top3PedagogiesList = tNode.pedagogies || tNode.top3Pedagogies || [
-                                { title: "Interactive Demonstration & EMR Simulation", type: "Experiential Learning", description: `Use visual and simulation tools to demonstrate wave theory and principles of ${tNode.title}.` },
-                                { title: "Problem-Based Math Worksheets", type: "Practice", description: `Apply Planck's and Wien's displacement laws to solve analytical problems.` },
-                                { title: "Flipped Classroom Discussion", type: "Collaborative", description: `Compare active vs passive radiation sources and evaluate real-world trade-offs.` }
-                              ];
+                              const rawPeds = tNode.top3Pedagogies || tNode.pedagogies || tNode.suggestedPedagogies || [];
+                              const top3PedagogiesList = Array.isArray(rawPeds) && rawPeds.length > 0
+                                ? rawPeds
+                                : [
+                                    {
+                                      title: `Problem-Based ${tNode.title} Workshop`,
+                                      type: "Active Learning",
+                                      description: `Engage students with hands-on problem scenarios specifically designed around ${tNode.title}.`,
+                                      reason: `Fosters practical mastery and active application of ${tNode.title} concepts.`
+                                    },
+                                    {
+                                      title: `Interactive Peer Discussion on ${tNode.title}`,
+                                      type: "Collaborative Learning",
+                                      description: `Structured peer-to-peer discussion to analyze key theoretical trade-offs in ${tNode.title}.`,
+                                      reason: `Promotes deeper cognitive processing and collaborative analysis.`
+                                    },
+                                    {
+                                      title: `${tNode.title} Case Study & Simulation`,
+                                      type: "Experiential Learning",
+                                      description: `Analyze real-world implementations and case studies focused on ${tNode.title}.`,
+                                      reason: `Connects abstract ${tNode.title} principles to concrete industry applications.`
+                                    }
+                                  ];
 
                               return (
                                 <div
@@ -1074,10 +1089,11 @@ export default function CurriculumPage() {
                                           {top3PedagogiesList.map((ped: any, idx: number) => {
                                             const pedTitle = ped.title || ped.pedagogyName || ped.name || `Pedagogy ${idx + 1}`;
                                             const pedType = ped.type || ped.method || "Strategy";
-                                            const pedDesc = ped.description || ped.rationale || ped.reason || "";
+                                            const pedDesc = ped.description || "";
+                                            const pedReason = ped.reason || ped.rationale || ped.orderingReason || "";
 
                                             return (
-                                              <div key={idx} className="bg-white dark:bg-[var(--bg-card)] p-3 rounded-xl border border-indigo-100 dark:border-indigo-900 text-xs shadow-xs">
+                                              <div key={idx} className="bg-white dark:bg-[var(--bg-card)] p-3 rounded-xl border border-indigo-100 dark:border-indigo-900 text-xs shadow-xs space-y-1">
                                                 <div className="flex items-center justify-between">
                                                   <span className="font-bold text-indigo-700 dark:text-indigo-300">
                                                     {idx + 1}. {pedTitle}
@@ -1085,8 +1101,13 @@ export default function CurriculumPage() {
                                                   <span className="text-gray-400 text-[10px]">({pedType})</span>
                                                 </div>
                                                 {pedDesc && (
-                                                  <p className="text-gray-600 dark:text-gray-300 text-[11px] mt-1 leading-relaxed">
+                                                  <p className="text-gray-600 dark:text-gray-300 text-[11px] leading-relaxed">
                                                     {pedDesc}
+                                                  </p>
+                                                )}
+                                                {pedReason && (
+                                                  <p className="text-indigo-900 dark:text-indigo-300 text-[10px] font-mono bg-indigo-50/80 dark:bg-indigo-950/60 p-1.5 rounded-lg border border-indigo-100 dark:border-indigo-900/60 mt-1">
+                                                    <strong>Reason:</strong> {pedReason}
                                                   </p>
                                                 )}
                                               </div>

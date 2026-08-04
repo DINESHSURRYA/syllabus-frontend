@@ -48,6 +48,9 @@ output_file_*.json
 evaluator frontend.txt
 co.html
 .commandcode/
+src/validation/*.png
+src/validation/*.jpg
+src/validation/*.jpeg
 
 # IDE & Code Editors
 .vscode/

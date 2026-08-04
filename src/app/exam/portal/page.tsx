@@ -257,14 +257,16 @@ export default function CandidateExamPortalPage() {
         const userAnsIdx = userAnswers[q.id];
         return {
           id: q.id,
-          text: q.text,
+          text: (q as any).questionText || (q as any).text || '',
           options: q.options.map((optText, optIdx) => ({
             text: optText,
             is_correct: optIdx === q.correctOptionIndex
           })),
-          bloom_level: bloomMap[q.cognitiveLevel] || 'Remember',
+          bloom_level: (q as any).knowledge_level || bloomMap[q.cognitiveLevel] || 'Remember',
+          knowledge_level: (q as any).knowledge_level || bloomMap[q.cognitiveLevel] || 'Remember',
           unit_number: (q as any).unitNumber || 1,
-          topic: (q as any).topic || 'General Topic',
+          topic: (q as any).topic || (q as any).unitTopic || targetAssessment.title || 'Core Principles & System Architecture',
+          subtopic: (q as any).subtopic || '',
           co_code: (q as any).coCode || 'CO1',
           user_answer: userAnsIdx !== undefined ? userAnsIdx : null,
           is_user_correct: userAnsIdx !== undefined && userAnsIdx === q.correctOptionIndex,

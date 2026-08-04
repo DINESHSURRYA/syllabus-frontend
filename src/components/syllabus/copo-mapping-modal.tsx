@@ -47,10 +47,9 @@ export const STANDARD_POS: ProgramOutcomeDef[] = [
   { code: 'PO9',  shortName: 'Teamwork',          fullName: 'Function effectively as an individual and as a member or leader in teams',        category: 'Professional' },
   { code: 'PO10', shortName: 'Communication',     fullName: 'Communicate effectively on complex engineering activities',                        category: 'Professional' },
   { code: 'PO11', shortName: 'Project Mgmt',      fullName: 'Demonstrate knowledge and understanding of engineering management principles',    category: 'Professional' },
-  { code: 'PO12', shortName: 'Life-long Learning',fullName: 'Recognise the need for, and have the ability to engage in independent learning',  category: 'Professional' },
-  { code: 'PSO1', shortName: 'Domain Systems',    fullName: 'Design and develop specialized domain architecture and software systems',         category: 'PSO' },
-  { code: 'PSO2', shortName: 'AI Intelligence',   fullName: 'Apply AI, machine learning and data engineering to real-world problems',          category: 'PSO' },
-  { code: 'PSO3', shortName: 'Emerging Tech',     fullName: 'Utilize emerging technologies and infrastructure for innovative solutions',        category: 'PSO' },
+  { code: 'PSO1', shortName: 'Domain Expertise',  fullName: 'Specialize in core domain architectures, software engineering and algorithms',     category: 'Program Specific' },
+  { code: 'PSO2', shortName: 'Tool Mastery',      fullName: 'Master modern hardware & software design tools to build scalable systems',         category: 'Program Specific' },
+  { code: 'PSO3', shortName: 'Innovation & Soc',  fullName: 'Develop innovative solutions addressing contemporary industry and societal needs',   category: 'Program Specific' },
 ];
 
 export function CoPoMappingModal({
@@ -120,35 +119,48 @@ export function CoPoMappingModal({
     if (!syllabusData) return;
 
     const content = syllabusData.content || syllabusData || {};
-    const rawOutcomes = content.outcomes || syllabusData.outcomes || [];
+    const rawOutcomes = content.outcomes || syllabusData.outcomes || content.coStatements || [];
+    const units = syllabusData.units || syllabusData.hierarchy || content.units || [];
     
-    // Construct normalized CO list (at least CO1..CO5)
-    let formattedCos: any[] = [];
-    if (Array.isArray(rawOutcomes) && rawOutcomes.length > 0) {
-      formattedCos = rawOutcomes.map((oc: any, idx: number) => {
-        if (typeof oc === 'string') {
-          return {
-            code: `CO${idx + 1}`,
-            description: oc,
-            bloomLevel: idx % 2 === 0 ? 'Apply (K3)' : 'Analyze (K4)'
-          };
-        }
-        return {
-          code: oc.code || oc.co_code || `CO${idx + 1}`,
-          description: oc.description || oc.statement || oc.title || `Outcome statement for CO${idx + 1}`,
-          bloomLevel: oc.bloom_level || oc.bloomLevel || 'Understand (K2)'
-        };
+    // Extract raw string statements
+    const extractedStmts: string[] = [];
+    if (Array.isArray(rawOutcomes)) {
+      rawOutcomes.forEach((oc: any) => {
+        let txt = typeof oc === 'string' ? oc : (oc.description || oc.statement || oc.title || '');
+        txt = txt.replace(/^(?:CO\d+\s*:\s*)+/gi, '').trim();
+        if (txt) extractedStmts.push(txt);
       });
-    } else {
-      // Default fallback COs if none explicitly in json
-      formattedCos = [
-        { code: 'CO1', description: 'Understand and apply foundational principles and domain methodologies.', bloomLevel: 'Understand (K2)' },
-        { code: 'CO2', description: 'Analyze complex engineering requirement specifications and system structures.', bloomLevel: 'Analyze (K4)' },
-        { code: 'CO3', description: 'Design and implement optimized algorithmic techniques and component models.', bloomLevel: 'Apply (K3)' },
-        { code: 'CO4', description: 'Conduct experimental validation and performance analysis using modern IT tools.', bloomLevel: 'Evaluate (K5)' },
-        { code: 'CO5', description: 'Demonstrate ethical standards, effective technical documentation and team leadership.', bloomLevel: 'Apply (K3)' },
-      ];
     }
+
+    // Always generate exactly 5 COs (CO1..CO5) matching 5 units
+    const formattedCos: any[] = [];
+    for (let i = 0; i < 5; i++) {
+      const coCode = `CO${i + 1}`;
+      let uTitle = '';
+      if (units[i]) {
+        uTitle = units[i].title || units[i].unitTitle || '';
+        uTitle = uTitle.replace(/^(?:UNIT|MODULE)\s+[IVXLCDM\d]+\s*:\s*/gi, '').trim();
+      }
+
+      let stmt = extractedStmts[i] || (uTitle ? `Understand and analyze core concepts, applications, and principles of ${uTitle}.` : '');
+      if (!stmt) {
+        const defaultStmts = [
+          'Describe fundamentals and main characteristics of core subject domains.',
+          'Analyze engineering problem specifications and design domain components.',
+          'Apply technological frameworks and principles to harness domain solutions.',
+          'Evaluate operational parameters, system performance, and design trade-offs.',
+          'Identify and evaluate emerging technical trends and advanced domain problems.'
+        ];
+        stmt = defaultStmts[i];
+      }
+
+      formattedCos.push({
+        code: coCode,
+        description: stmt,
+        bloomLevel: i % 2 === 0 ? 'Apply (K3)' : 'Analyze (K4)'
+      });
+    }
+
     setCourseOutcomes(formattedCos);
 
     // Initialize mapping matrix values

@@ -159,17 +159,18 @@ export default function AnalyticsPage() {
     return () => { isMounted = false; };
   }, [selectedSyllabusId]);
 
-  const stats = analyticsData?.statistics || (analyticsData ? {
-    totalUnits: analyticsData.totalUnits || 0,
-    totalTopics: analyticsData.totalTopics || 0,
-    totalSubtopics: analyticsData.totalSubtopics || 0,
-    totalConcepts: analyticsData.totalSubtopics || 0,
-    totalTeachingHours: analyticsData.totalLearningHours || 0,
-    avgHoursPerUnit: roundVal((analyticsData.totalLearningHours || 0) / maxOne(analyticsData.totalUnits)),
-    avgHoursPerTopic: roundVal((analyticsData.totalLearningHours || 0) / maxOne(analyticsData.totalTopics)),
-    totalPedagogiesRecommended: (analyticsData.topPedagogies || []).length || 5,
+  const rawData = analyticsData as any;
+  const stats = analyticsData?.statistics || (rawData ? {
+    totalUnits: rawData.totalUnits || 0,
+    totalTopics: rawData.totalTopics || 0,
+    totalSubtopics: rawData.totalSubtopics || 0,
+    totalConcepts: rawData.totalSubtopics || 0,
+    totalTeachingHours: rawData.totalLearningHours || 0,
+    avgHoursPerUnit: roundVal((rawData.totalLearningHours || 0) / maxOne(rawData.totalUnits)),
+    avgHoursPerTopic: roundVal((rawData.totalLearningHours || 0) / maxOne(rawData.totalTopics)),
+    totalPedagogiesRecommended: (rawData.topPedagogies || []).length || 5,
     totalLearningOutcomes: 5,
-    estimatedTeachingWeeks: Math.max(1, Math.round((analyticsData.totalLearningHours || 45) / 3))
+    estimatedTeachingWeeks: Math.max(1, Math.round((rawData.totalLearningHours || 45) / 3))
   } : null);
 
   return (

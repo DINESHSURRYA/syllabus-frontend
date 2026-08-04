@@ -278,3 +278,22 @@ export async function uploadAndExtractSyllabusBackend(
 export async function generateCoPoMapping(params: CoPoMappingParams) {
   return client.post(API.syllabus.generateCoPoMapping, params, { timeout: 0 });
 }
+
+export async function uploadSyllabusPdf(file: File): Promise<{ job_id: string; status: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return client.post(API.syllabus.uploadDynamic, formData, { timeout: 300000 });
+}
+
+export async function getJobStatus(jobId: string) {
+  return client.get(API.syllabus.getJob(jobId));
+}
+
+export async function saveVerifiedCourse(payload: any) {
+  return client.post(API.syllabus.saveCourse, payload);
+}
+
+export async function updateCopoMapping(courseId: string, mappings: any[]) {
+  return client.post(API.syllabus.updateMapping(courseId), { mappings });
+}
+

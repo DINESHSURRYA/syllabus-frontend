@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Duplicate File Alert - Versioning</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                    },
+                    colors: {
+                        navy: {
+                            800: '#0f172a',
+                            900: '#0a0f1d',
+                            950: '#050811',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Alpine.js CDN -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        .glass-modal {
+            background: rgba(15, 23, 42, 0.88);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-navy-950 text-slate-100 font-sans antialiased min-h-screen flex items-center justify-center p-4 selection:bg-indigo-500 selection:text-white"
+      x-data="duplicateAlertApp()">
+
+    <!-- DEMO TRIGGER BUTTON -->
+    <div class="text-center space-y-4">
+        <h1 class="text-2xl font-bold text-white">Syllabus File Manager</h1>
+        <p class="text-sm text-slate-400">Click below to simulate uploading a duplicate file.</p>
+        <button @click="openModal()" 
+                class="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-sm rounded-xl shadow-lg shadow-indigo-600/25 transition-all flex items-center gap-2 mx-auto">
+            <i data-lucide="files" class="w-4 h-4"></i>
+            <span>Simulate Duplicate Upload</span>
+        </button>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- DUPLICATE FILE DETECTED MODAL              -->
+    <!-- ========================================== -->
+    <div x-show="isOpen" 
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100 scale-100"
+         x-transition:leave-end="opacity-0 scale-95"
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/80 backdrop-blur-md"
+         style="display: none;">
+        
+        <div class="glass-modal rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative overflow-hidden border border-indigo-500/30 text-center">
+            
+            <!-- Warning Badge Icon -->
+            <div class="inline-flex items-center justify-center p-3.5 bg-indigo-500/10 text-indigo-400 rounded-2xl border border-indigo-500/30 mb-5 shadow-inner">
+                <i data-lucide="copy" class="w-8 h-8"></i>
+            </div>
+
+            <!-- Modal Title & Message -->
+            <h3 class="text-xl font-extrabold text-white tracking-tight">Duplicate File Detected</h3>
+            <p class="text-slate-300 text-sm mt-2 leading-relaxed">
+                An identical or existing file already exists for this course syllabus.
+            </p>
+
+            <!-- File Version Comparison Preview -->
+            <div class="my-6 p-4 rounded-2xl bg-slate-900/90 border border-slate-800 text-left space-y-3">
+                <div class="flex items-center justify-between text-xs pb-2 border-b border-slate-800">
+                    <span class="text-slate-400 font-semibold uppercase tracking-wider text-[10px]">Course Code</span>
+                    <span class="font-mono font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20" x-text="courseCode">CSE-301</span>
+                </div>
+
+                <!-- Existing Version vs New Version Diagram -->
+                <div class="grid grid-cols-2 gap-3 text-xs">
+                    <!-- Current Version -->
+                    <div class="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50 space-y-1">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Current File</span>
+                        <div class="font-semibold text-slate-200 truncate" x-text="fileName">CSE301_Syllabus.pdf</div>
+                        <span class="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">
+                            <i data-lucide="check-circle-2" class="w-3 h-3"></i> Version 1.0
+                        </span>
+                    </div>
+
+                    <!-- New Version 2 Preview -->
+                    <div class="p-2.5 rounded-xl bg-indigo-950/40 border border-indigo-500/30 space-y-1">
+                        <span class="text-[10px] font-bold text-indigo-300 uppercase tracking-wider block">Incoming File</span>
+                        <div class="font-semibold text-indigo-200 truncate" x-text="fileName">CSE301_Syllabus.pdf</div>
+                        <span class="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-400 bg-indigo-500/20 px-2 py-0.5 rounded border border-indigo-500/30">
+                            <i data-lucide="git-branch" class="w-3 h-3"></i> Version 2.0
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Versioning Info Box -->
+                <p class="text-[11px] text-slate-400 leading-normal pt-1">
+                    <i data-lucide="info" class="w-3.5 h-3.5 text-indigo-400 inline -mt-0.5 mr-0.5"></i>
+                    Proceeding will store this as <strong class="text-slate-200">Version 2</strong> while preserving <strong class="text-slate-200">Version 1</strong> in history.
+                </p>
+            </div>
+
+            <!-- ACTION BUTTONS WITH "OR" DIVIDER -->
+            <div class="space-y-3">
+                
+                <!-- Action 1: Save as Version 2 -->
+                <button @click="handleAction('version2')" 
+                        class="w-full py-3.5 px-5 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-lg shadow-indigo-600/25 transition-all flex items-center justify-center gap-2 group">
+                    <i data-lucide="layers" class="w-4 h-4 group-hover:scale-110 transition-transform"></i>
+                    <span>Proceed & Save as Version 2</span>
+                </button>
+
+                <!-- "OR" Separator -->
+                <div class="relative flex items-center justify-center my-3">
+                    <div class="border-t border-slate-700/80 w-full"></div>
+                    <span class="bg-navy-900 px-3 text-[11px] font-extrabold text-slate-400 uppercase tracking-widest absolute rounded-full border border-slate-800">
+                        OR
+                    </span>
+                </div>
+
+                <!-- Action 2: Discard / Do Not Proceed -->
+                <button @click="handleAction('discard')" 
+                        class="w-full py-3.5 px-5 bg-slate-800 hover:bg-slate-700/80 text-rose-400 hover:text-rose-300 font-extrabold text-xs sm:text-sm rounded-xl border border-rose-500/20 transition-all flex items-center justify-center gap-2">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    <span>Do Not Proceed (Discard Duplicate)</span>
+                </button>
+
+            </div>
+
+            <!-- Cancel Option -->
+            <div class="mt-5 pt-4 border-t border-slate-800/80">
+                <button @click="isOpen = false" class="text-xs text-slate-400 hover:text-slate-200 transition-colors">
+                    Cancel Action
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        function duplicateAlertApp() {
+            return {
+                isOpen: true, // Opened by default for preview
+                courseCode: 'CSE-301',
+                fileName: 'CSE301_Syllabus_2026.pdf',
+
+                openModal() {
+                    this.isOpen = true;
+                },
+
+                handleAction(type) {
+                    if (type === 'version2') {
+                        alert('File saved successfully as Version 2.0! Both versions are now accessible in syllabus history.');
+                    } else if (type === 'discard') {
+                        alert('Duplicate file discarded. The original Version 1 remains unchanged.');
+                    }
+                    this.isOpen = false;
+                }
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+        });
+    </script>
+</body>
+</html>

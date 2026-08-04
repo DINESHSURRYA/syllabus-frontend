@@ -70,39 +70,39 @@ function SortableQuestionCard({
     <div
       ref={setNodeRef}
       style={style}
-      className="p-4 rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-black/60 shadow-sm flex items-start justify-between gap-3 group transition-all"
+      className="p-4 rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-black/60 shadow-sm flex items-start justify-between gap-3 group transition-all overflow-hidden"
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-3 min-w-0 flex-1">
         {/* Drag Handle */}
         <button
           {...attributes}
           {...listeners}
           type="button"
-          className="mt-1 cursor-grab active:cursor-grabbing text-slate-400 hover:text-cyan-500 transition-colors"
+          className="mt-1 cursor-grab active:cursor-grabbing text-slate-400 hover:text-cyan-500 transition-colors shrink-0"
           title="Drag to reorder"
         >
           <GripVertical size={18} />
         </button>
 
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-2">
-            <span className="flex h-5 w-5 items-center justify-center rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] font-mono font-bold text-slate-700 dark:text-slate-300">
+        <div className="space-y-1.5 min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="flex h-5 w-5 items-center justify-center rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] font-mono font-bold text-slate-700 dark:text-slate-300 shrink-0">
               {index + 1}
             </span>
-            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${bloomInfo.bg} ${bloomInfo.color}`}>
+            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 ${bloomInfo.bg} ${bloomInfo.color}`}>
               {bloomInfo.name}
             </span>
-            <span className="text-[10px] font-mono text-slate-500">
+            <span className="text-[10px] font-mono text-slate-500 shrink-0">
               {question.difficulty}
             </span>
           </div>
 
-          <p className="text-xs font-semibold text-slate-900 dark:text-white leading-snug">
+          <p className="text-xs font-semibold text-slate-900 dark:text-white leading-snug break-words">
             {question.questionText}
           </p>
 
-          <p className="text-[10px] text-slate-500 truncate">
-            {question.unitTopic || 'General Topic'}
+          <p className="text-[10px] text-slate-500 truncate" title={question.topic || question.unitTopic || 'Core Principles & System Architecture'}>
+            {question.topic || question.unitTopic || 'Core Principles & System Architecture'}
           </p>
         </div>
       </div>
